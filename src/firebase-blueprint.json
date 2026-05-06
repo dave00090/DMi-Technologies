@@ -1,0 +1,94 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User profile information including role and username",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "name": { "type": "string", "description": "Full name of the user" },
+        "username": { "type": "string", "description": "Unique username for login" },
+        "email": { "type": "string", "description": "Internal or external email address" },
+        "role": { "type": "string", "enum": ["admin", "staff"], "description": "User role" },
+        "lastLogin": { "type": "string", "format": "date-time", "description": "Last login timestamp" }
+      },
+      "required": ["uid", "name", "username", "email", "role"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Product with variants and stock tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string", "enum": ["Clothes", "Shoes", "Accessories"] },
+        "buyingPrice": { "type": "number", "description": "Cost price of the product" },
+        "sellingPrice": { "type": "number", "description": "Selling price of the product" },
+        "basePrice": { "type": "number", "description": "Legacy base price" },
+        "variants": { "type": "array", "items": { "$ref": "Variant" } },
+        "lowStockThreshold": { "type": "number" },
+        "description": { "type": "string" }
+      },
+      "required": ["name", "category", "basePrice", "variants", "lowStockThreshold"]
+    },
+    "Variant": {
+      "title": "Product Variant",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "size": { "type": "string" },
+        "color": { "type": "string" },
+        "stock": { "type": "number" },
+        "sku": { "type": "string" }
+      },
+      "required": ["id", "size", "color", "stock"]
+    },
+    "Sale": {
+      "title": "Sale Record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "items": { "type": "array" },
+        "total": { "type": "number" },
+        "timestamp": { "type": "string" },
+        "cashierId": { "type": "string" },
+        "cashierName": { "type": "string" }
+      },
+      "required": ["items", "total", "timestamp", "cashierId", "cashierName"]
+    },
+    "Alert": {
+      "title": "System Alert",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["PRICE_OVERRIDE", "LOW_STOCK"] },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "status": { "type": "string", "enum": ["UNREAD", "READ"] }
+      },
+      "required": ["type", "message", "timestamp", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile documents"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Product inventory documents"
+    },
+    "/sales/{saleId}": {
+      "schema": "Sale",
+      "description": "Sales transaction records"
+    },
+    "/alerts/{alertId}": {
+      "schema": "Alert",
+      "description": "System alerts for low stock and price overrides"
+    },
+    "/loginHistory/{historyId}": {
+      "schema": "LoginHistory",
+      "description": "Audit log of user logins"
+    }
+  }
+}

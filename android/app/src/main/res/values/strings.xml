@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">DMi Technologies POS</string>
+    <string name="title_activity_main">DMi Technologies POS</string>
+    <string name="package_name">com.dmitechnologies.app</string>
+    <string name="custom_url_scheme">com.dmitechnologies.app</string>
+</resources>

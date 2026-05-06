@@ -1,0 +1,151 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-primary: var(--primary-color, #4f46e5);
+  --color-secondary: var(--secondary-color, #7c3aed);
+  --color-accent: var(--accent-color, #10b981);
+  
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-ink: var(--ink);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+}
+
+:root {
+  --bg: #f8fafc;
+  --card: #ffffff;
+  --ink: #0f172a;
+  --accent: #6366f1;
+  --border: #e2e8f0;
+  --muted: #64748b;
+  
+  --primary-color: #4f46e5;
+  --secondary-color: #7c3aed;
+  --accent-color: #10b981;
+}
+
+.dark {
+  --bg: #0f172a;
+  --card: #1e293b;
+  --ink: #f8fafc;
+  --accent: #818cf8;
+  --border: #334155;
+  --muted: #94a3b8;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  transition: background-color 0.3s ease, color 0.3s ease;
+  zoom: var(--app-zoom, 1);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.scroll-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scroll-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.receipt-font {
+  font-family: var(--font-mono);
+}
+
+@media print {
+  /* Default: Hide everything */
+  body * {
+    visibility: hidden !important;
+  }
+  
+  /* Show receipt if it exists */
+  #print-receipt, #print-receipt * {
+    visibility: visible !important;
+  }
+  
+  /* Show main content if we're printing a report (not a receipt) */
+  body:not(.printing-receipt) main, 
+  body:not(.printing-receipt) main * {
+    visibility: visible !important;
+  }
+
+  /* Hide sidebar and header when printing reports */
+  aside, header, .print\:hidden {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  main {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  #print-receipt {
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    background: white !important;
+    color: black !important;
+    z-index: 99999 !important;
+  }
+
+  /* Force background colors to print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+.custom-scrollbar {
+  scrollbar-width: auto;
+  scrollbar-color: #10b981 rgba(0, 0, 0, 0.1);
+  overflow-y: scroll !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  display: block !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #10b981;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #059669;
+  background-clip: padding-box;
+}
+

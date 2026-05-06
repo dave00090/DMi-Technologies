@@ -1,0 +1,40 @@
+{
+  "name": "DMi Technologies POS",
+  "short_name": "DMi Technologies",
+  "description": "Premium Retail Point of Sale System by DMi Technologies. Works offline and on any device.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#4f46e5",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    {
+      "src": "https://storage.googleapis.com/static.antigravity.dev/projects/kayb6z7vprmlkln2iwpxb5/attachments/42f9b841-8608-410a-85d0-99c58550787e.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://storage.googleapis.com/static.antigravity.dev/projects/kayb6z7vprmlkln2iwpxb5/attachments/42f9b841-8608-410a-85d0-99c58550787e.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "https://picsum.photos/seed/pos-screen1/1280/720",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Dashboard View"
+    },
+    {
+      "src": "https://picsum.photos/seed/pos-screen2/720/1280",
+      "sizes": "720x1280",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Mobile Sales View"
+    }
+  ]
+}
