@@ -122,11 +122,9 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
     const confirm = window.confirm(`DANGER: Are you sure you want to PERMANENTLY delete the account for ${license.client_name}? This will remove all their records and lock their system.`);
     if (!confirm) return;
 
-    if (license.business_id) {
-      const reset = window.confirm(`Should we also PURGE all business data (Sales, Expenses, Inventory) for ${license.client_name}?`);
-      if (reset) {
-        await masterService.resetClientData(license.business_id);
-      }
+    const reset = window.confirm(`Should we also PURGE all business data (Sales, Expenses, Inventory) associated with "${license.client_name}"?`);
+    if (reset) {
+      await masterService.resetClientData(license.client_name);
     }
 
     const { error } = await masterService.deleteClient(license.id);
@@ -138,14 +136,9 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
   };
 
   const handleResetBalances = async (license: License) => {
-    if (!license.business_id) {
-      alert('This license is not yet linked to a valid Business ID. Link it first.');
-      return;
-    }
-
     const confirm = window.confirm(`Reset ALL financial balances (Sales, Debts, Ledger) for ${license.client_name}? This cannot be undone.`);
     if (confirm) {
-      const { success, errors } = await masterService.resetClientData(license.business_id);
+      const { success, errors } = await masterService.resetClientData(license.client_name);
       if (success) alert('Balances Reset Successfully.');
       else alert('Reset failed: ' + errors?.join(', '));
       fetchData();
@@ -161,8 +154,6 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
 
     const fee = prompt('Enter License Fee (KES):', '15000');
     if (!fee || isNaN(Number(fee))) return;
-    
-    const busId = prompt('Enter Business ID (Optional - maps to their specific database data):');
 
     // Generate unique key format: DMI-XXXX-XXXX-XXXX
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -172,7 +163,6 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
 
     const { error } = await supabase.from('licenses').insert({
       id,
-      business_id: busId || null,
       client_name: clientName,
       system_name: systemName,
       license_key: licenseKey,
@@ -399,7 +389,7 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                         <tr key={license.id} className="hover:bg-slate-800/30 transition-colors">
                           <td className="px-6 py-4">
                             <div className="font-bold text-slate-200">{license.client_name}</div>
-                            <div className="text-[10px] text-slate-500 uppercase tracking-widest">{license.system_name} | {license.business_id || 'NO ID'}</div>
+                            <div className="text-[10px] text-slate-500 uppercase tracking-widest">{license.system_name}</div>
                           </td>
                           <td className="px-6 py-4">
                             <code className="bg-slate-950 px-2 py-1 rounded-lg text-xs text-indigo-400 border border-slate-800">{license.license_key}</code>
@@ -487,7 +477,7 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                           <div className={`w-3 h-3 rounded-full ${(!l.last_heartbeat || new Date().getTime() - new Date(l.last_heartbeat).getTime() > 1000 * 60 * 5) ? 'bg-red-500' : 'bg-emerald-500'} animate-pulse`} />
                           <div>
                             <p className="font-bold text-sm">{l.client_name}</p>
-                            <p className="text-[10px] text-slate-500 uppercase tracking-widest">{l.business_id || 'DEMO'}</p>
+                            <p className="text-[10px] text-slate-500 uppercase tracking-widest">{l.system_name || 'RetailMaster'}</p>
                           </div>
                         </div>
                         <div className="text-right">
@@ -499,8 +489,8 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="p-2 bg-slate-900 rounded-xl border border-slate-800/50">
-                          <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Business ID</p>
-                          <p className="text-xs font-black text-indigo-400 font-mono truncate">{l.business_id || 'Not Linked'}</p>
+                          <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Target Market</p>
+                          <p className="text-xs font-black text-indigo-400 font-mono truncate">Kenya / Global</p>
                         </div>
                         <div className="p-2 bg-slate-900 rounded-xl border border-slate-800/50">
                           <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">System Env</p>

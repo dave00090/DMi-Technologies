@@ -29,7 +29,6 @@ export const supabase = supabaseUrl && supabaseKey
 
 export interface License {
   id: string;
-  business_id: string | null;
   license_key: string;
   client_name: string;
   status: 'ACTIVE' | 'LOCKED' | 'PENDING';
@@ -132,13 +131,13 @@ export const masterService = {
   },
 
   // Reset Client Sales/Balance/Data
-  resetClientData: async (businessId: string) => {
-    if (!businessId) return { error: 'Business ID required' };
+  resetClientData: async (identifier: string) => {
+    if (!identifier) return { error: 'Identifier required' };
     
-    // Clean up sales, expenses, etc. for a specific business
+    // Clean up sales, expenses, etc. using the unique businessId or client_name
     const tables = ['sales', 'expenses', 'debts', 'ledger_entries'];
     const results = await Promise.all(tables.map(table => 
-      supabase.from(table).delete().eq('businessId', businessId)
+      supabase.from(table).delete().or(`businessId.eq.${identifier},client_name.eq.${identifier}`)
     ));
     
     const errors = results.filter(r => r.error).map(r => r.error?.message);
