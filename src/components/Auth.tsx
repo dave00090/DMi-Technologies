@@ -4,7 +4,7 @@ import { UserProfile, Role } from '../types';
 import { LogIn, LogOut, User as UserIcon, Shield, Loader2, Lock, UserPlus, X, Chrome } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-import { DMI_LOGO_URL } from '../constants';
+import { SYSTEM_LOGO_URL } from '../constants';
 
 interface AuthProps {
   onUserLoaded: (user: UserProfile | null) => void;
@@ -105,7 +105,7 @@ export const Auth: React.FC<AuthProps> = ({ onUserLoaded }) => {
           <div className="text-center mb-8">
             <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 overflow-hidden border border-border shadow-sm">
               <img 
-                src={DMI_LOGO_URL} 
+                src={SYSTEM_LOGO_URL} 
                 alt="Logo" 
                 className="w-full h-full object-contain p-2" 
                 onError={(e) => {
@@ -223,7 +223,7 @@ export const Auth: React.FC<AuthProps> = ({ onUserLoaded }) => {
         <div className="flex items-center gap-3 px-3 py-1.5 bg-card rounded-xl border border-border shadow-sm hover:border-indigo-200 transition-all group relative">
           <div className="w-8 h-8 rounded-full bg-[#050505] flex items-center justify-center flex-shrink-0 overflow-hidden border border-border">
             <img 
-              src={DMI_LOGO_URL} 
+              src={SYSTEM_LOGO_URL} 
               alt="Logo" 
               className="w-full h-full object-contain scale-110" 
               referrerPolicy="no-referrer"
@@ -264,7 +264,7 @@ export const Auth: React.FC<AuthProps> = ({ onUserLoaded }) => {
               <div className="text-center mb-8">
                 <div className="w-24 h-24 bg-[#050505] rounded-3xl flex items-center justify-center mx-auto mb-6 overflow-hidden border border-border shadow-xl">
                   <img 
-                    src={DMI_LOGO_URL} 
+                    src={SYSTEM_LOGO_URL} 
                     alt="Logo" 
                     className="w-full h-full object-contain scale-110" 
                     referrerPolicy="no-referrer"

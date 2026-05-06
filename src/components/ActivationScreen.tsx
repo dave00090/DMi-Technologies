@@ -5,7 +5,7 @@ import { db } from '../services/db';
 import { SafeImage } from './SafeImage';
 import { masterService } from '../services/masterService';
 
-import { DMI_LOGO_URL } from '../constants';
+import { SYSTEM_LOGO_URL } from '../constants';
 
 interface ActivationScreenProps {
   onActivated: () => void;
@@ -96,7 +96,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
             className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center mx-auto mb-6 overflow-hidden border border-slate-800 shadow-xl cursor-pointer active:scale-95 transition-transform"
           >
             <SafeImage 
-              src={DMI_LOGO_URL} 
+              src={SYSTEM_LOGO_URL} 
               alt="Logo" 
               className="w-full h-full object-contain p-3" 
               fallback={<Store className="w-10 h-10 text-slate-300" />}

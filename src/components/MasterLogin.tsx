@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Shield, Key, ArrowRight, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { DMI_LOGO_URL } from '../constants';
+import { SYSTEM_LOGO_URL } from '../constants';
 
 interface MasterLoginProps {
   onLogin: (success: boolean) => void;
@@ -34,7 +34,7 @@ export const MasterLogin: React.FC<MasterLoginProps> = ({ onLogin, onCancel }) =
         
         <div className="flex flex-col items-center text-center mb-8">
           <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center mb-4 overflow-hidden border border-slate-700 shadow-xl">
-            <img src={DMI_LOGO_URL} alt="DMi" className="w-full h-full object-contain p-3" />
+            <img src={SYSTEM_LOGO_URL} alt="DMi" className="w-full h-full object-contain p-3" />
           </div>
           <h2 className="text-2xl font-black text-white uppercase tracking-tight">Master Control Access</h2>
           <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-2">Authorized Personnel Only</p>

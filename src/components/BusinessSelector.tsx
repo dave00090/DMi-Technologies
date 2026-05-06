@@ -5,7 +5,7 @@ import { Plus, Building2, Store, ChevronRight, Briefcase, Trash2, X, AlertTriang
 import { motion, AnimatePresence } from 'motion/react';
 import { compressImage } from '../lib/imageUtils';
 
-import { DMI_LOGO_URL, DMI_FALLBACK_ICON } from '../constants';
+import { BRAND_LOGO_URL, DMI_FALLBACK_ICON } from '../constants';
 
 import { SafeImage } from './SafeImage';
 
@@ -140,7 +140,7 @@ export const BusinessSelector: React.FC<BusinessSelectorProps> = ({ onSelect, on
         <div className="text-center mb-12">
           <div className="w-20 h-20 bg-white border border-border rounded-3xl flex items-center justify-center mx-auto mb-6 overflow-hidden shadow-sm">
             <SafeImage 
-              src={DMI_LOGO_URL} 
+              src={BRAND_LOGO_URL} 
               alt="Logo" 
               className="w-full h-full object-contain p-2" 
               fallback={
@@ -262,7 +262,7 @@ export const BusinessSelector: React.FC<BusinessSelectorProps> = ({ onSelect, on
                       className="w-full h-full object-contain p-2" 
                       fallback={
                         <img 
-                          src={DMI_LOGO_URL} 
+                          src={BRAND_LOGO_URL} 
                           alt="Logo" 
                           className="w-full h-full object-contain p-2 opacity-50" 
                           onError={(e) => {

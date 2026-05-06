@@ -4,7 +4,7 @@ import { Shop, BusinessProfile } from '../types';
 import { Plus, Store, ChevronRight, ArrowLeft, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SafeImage } from './SafeImage';
-import { DMI_LOGO_URL, DMI_FALLBACK_ICON } from '../constants';
+import { BRAND_LOGO_URL, DMI_FALLBACK_ICON } from '../constants';
 
 interface ShopSelectorProps {
   business: BusinessProfile;
@@ -80,7 +80,7 @@ export const ShopSelector: React.FC<ShopSelectorProps> = ({ business, onSelect, 
           </button>
           <div className="w-20 h-20 bg-white border border-border rounded-3xl flex items-center justify-center mx-auto mb-6 overflow-hidden shadow-sm">
             <SafeImage 
-              src={DMI_LOGO_URL} 
+              src={BRAND_LOGO_URL} 
               alt="Logo" 
               className="w-full h-full object-contain p-2" 
               fallback={<Store className="w-10 h-10 text-slate-300" />}
@@ -102,7 +102,7 @@ export const ShopSelector: React.FC<ShopSelectorProps> = ({ business, onSelect, 
             >
               <div className="w-20 h-20 bg-white border border-border rounded-2xl flex items-center justify-center mb-6 overflow-hidden group-hover:border-emerald-500/50 transition-all shadow-md">
                 <SafeImage 
-                  src={business.logo || DMI_LOGO_URL} 
+                  src={business.logo || BRAND_LOGO_URL} 
                   alt="Logo" 
                   className="w-full h-full object-contain p-2" 
                   fallback={<Store className="w-10 h-10 text-slate-300" />}

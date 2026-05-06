@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
-import { DMI_LOGO_URL, DMI_FALLBACK_ICON } from '../constants';
+import { BRAND_LOGO_URL, DMI_FALLBACK_ICON } from '../constants';
 
 import { SafeImage } from './SafeImage';
 
@@ -137,7 +137,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 className="w-10 h-10 rounded-xl object-contain bg-white border border-border flex-shrink-0" 
                 fallback={
                   <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-white font-black text-xl overflow-hidden border border-border flex-shrink-0">
-                    <img src={DMI_LOGO_URL} alt="DMi" className="w-full h-full object-contain" onError={(e) => {
+                    <img src={BRAND_LOGO_URL} alt="DMi" className="w-full h-full object-contain" onError={(e) => {
                       e.currentTarget.src = DMI_FALLBACK_ICON;
                     }} />
                   </div>
