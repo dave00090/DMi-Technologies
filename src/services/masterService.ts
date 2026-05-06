@@ -122,6 +122,7 @@ export const masterService = {
 
   reportPiracy: async (licenseId: string, message: string) => {
     await supabase.from('piracy_alerts').insert({
+      id: crypto.randomUUID(),
       license_id: licenseId,
       message,
       timestamp: new Date().toISOString(),

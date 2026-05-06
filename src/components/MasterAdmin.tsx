@@ -68,8 +68,10 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     const generateSegment = () => Array.from({length: 4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
     const licenseKey = `DMI-${generateSegment()}-${generateSegment()}-${generateSegment()}`;
+    const id = crypto.randomUUID(); // Generate UUID for the id field
 
     const { error } = await supabase.from('licenses').insert({
+      id,
       client_name: clientName,
       system_name: systemName,
       license_key: licenseKey,
