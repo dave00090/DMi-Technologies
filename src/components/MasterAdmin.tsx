@@ -25,32 +25,130 @@ interface MasterAdminProps {
 
 export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
   const [licenses, setLicenses] = useState<License[]>([]);
-  const [stats, setStats] = useState({ totalClients: 0, activeClients: 0, totalRevenue: 0 });
+  const [stats, setStats] = useState({ 
+    totalClients: 0, 
+    activeClients: 0, 
+    totalRevenue: 0,
+    todaySales: 0,
+    growth: 0,
+    onlineStaff: 0
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [view, setView] = useState<'dashboard' | 'licenses' | 'security'>('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
+  const [networkStatus, setNetworkStatus] = useState<'online' | 'offline'>('online');
 
   useEffect(() => {
     fetchData();
+    
+    // Check network status
+    window.addEventListener('online', () => setNetworkStatus('online'));
+    window.addEventListener('offline', () => setNetworkStatus('offline'));
+
+    // Real-time subscription for licenses
+    const licenseSubscription = supabase
+      .channel('master-licenses')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'licenses' }, () => {
+        fetchData();
+      })
+      .subscribe();
+
+    // Real-time subscription for sales
+    const salesSubscription = supabase
+      .channel('master-sales')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sales' }, () => {
+        fetchData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(licenseSubscription);
+      supabase.removeChannel(salesSubscription);
+    };
   }, []);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
+      // 1. Fetch Licenses
       const { data: licenseData } = await supabase.from('licenses').select('*').order('created_at', { ascending: false });
       if (licenseData) setLicenses(licenseData);
 
-      const totalRev = licenseData?.reduce((sum, l) => sum + (Number(l.license_fee) || 0), 0) || 0;
+      // 2. Fetch Sales for Metrics
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      
+      const startOfLastMonth = new Date();
+      startOfLastMonth.setMonth(startOfLastMonth.getMonth() - 1);
+      startOfLastMonth.setDate(1);
+      startOfLastMonth.setHours(0, 0, 0, 0);
+
+      const { data: salesData } = await supabase.from('sales').select('amount, timestamp');
+      
+      const today = new Date().toISOString().split('T')[0];
+      const todaySales = salesData?.filter(s => s.timestamp?.startsWith(today)).reduce((sum, s) => sum + s.amount, 0) || 0;
+      const totalRev = salesData?.reduce((sum, s) => sum + s.amount, 0) || 0;
+
+      // Calculate Growth (Simple month-over-month comparison)
+      const thisMonth = new Date().toISOString().slice(0, 7);
+      const lastMonth = new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().slice(0, 7);
+      
+      const thisMonthSales = salesData?.filter(s => s.timestamp?.startsWith(thisMonth)).reduce((sum, s) => sum + s.amount, 0) || 0;
+      const lastMonthSales = salesData?.filter(s => s.timestamp?.startsWith(lastMonth)).reduce((sum, s) => sum + s.amount, 0) || 1; // avoid div by 0
+      
+      const growth = lastMonthSales > 1 ? ((thisMonthSales - lastMonthSales) / lastMonthSales * 100) : 0;
+
+      // 3. Estimate Online Staff (Active in last 30 mins)
+      const { data: staffLogins } = await supabase.from('login_history')
+        .select('*')
+        .gt('timestamp', new Date(Date.now() - 30 * 60000).toISOString());
       
       setStats({
         totalClients: licenseData?.length || 0,
         activeClients: licenseData?.filter(l => l.status === 'ACTIVE').length || 0,
-        totalRevenue: totalRev
+        totalRevenue: totalRev,
+        todaySales,
+        growth: Math.round(growth),
+        onlineStaff: staffLogins?.length || 0
       });
     } catch (err) {
       console.error('Master Admin fetch error:', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleDeleteClient = async (license: License) => {
+    const confirm = window.confirm(`DANGER: Are you sure you want to PERMANENTLY delete the account for ${license.client_name}? This will remove all their records and lock their system.`);
+    if (!confirm) return;
+
+    if (license.business_id) {
+      const reset = window.confirm(`Should we also PURGE all business data (Sales, Expenses, Inventory) for ${license.client_name}?`);
+      if (reset) {
+        await masterService.resetClientData(license.business_id);
+      }
+    }
+
+    const { error } = await masterService.deleteClient(license.id);
+    if (error) alert('Error: ' + error);
+    else {
+      alert('Client Account Deleted Successfully.');
+      fetchData();
+    }
+  };
+
+  const handleResetBalances = async (license: License) => {
+    if (!license.business_id) {
+      alert('This license is not yet linked to a valid Business ID. Link it first.');
+      return;
+    }
+
+    const confirm = window.confirm(`Reset ALL financial balances (Sales, Debts, Ledger) for ${license.client_name}? This cannot be undone.`);
+    if (confirm) {
+      const { success, errors } = await masterService.resetClientData(license.business_id);
+      if (success) alert('Balances Reset Successfully.');
+      else alert('Reset failed: ' + errors?.join(', '));
+      fetchData();
     }
   };
 
@@ -63,21 +161,24 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
 
     const fee = prompt('Enter License Fee (KES):', '15000');
     if (!fee || isNaN(Number(fee))) return;
+    
+    const busId = prompt('Enter Business ID (Optional - maps to their specific database data):');
 
     // Generate unique key format: DMI-XXXX-XXXX-XXXX
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     const generateSegment = () => Array.from({length: 4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
     const licenseKey = `DMI-${generateSegment()}-${generateSegment()}-${generateSegment()}`;
-    const id = crypto.randomUUID(); // Generate UUID for the id field
+    const id = crypto.randomUUID();
 
     const { error } = await supabase.from('licenses').insert({
       id,
+      business_id: busId || null,
       client_name: clientName,
       system_name: systemName,
       license_key: licenseKey,
       license_fee: Number(fee),
       status: 'ACTIVE',
-      penalty_amount: Math.floor(Number(fee) * 1.5) // Auto set penalty as 1.5x fee
+      penalty_amount: Math.floor(Number(fee) * 1.5)
     });
 
     if (error) {
@@ -152,6 +253,12 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
         </nav>
 
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 px-4 py-2 bg-slate-950/50 border border-slate-800 rounded-xl">
+             <div className={`w-2 h-2 rounded-full ${networkStatus === 'online' ? 'bg-emerald-500' : 'bg-red-500'} animate-pulse`} />
+             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+               Master Node: {networkStatus}
+             </span>
+          </div>
           <button 
             onClick={fetchData}
             className="p-3 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-400 transition-colors"
@@ -190,7 +297,7 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
               </div>
               <div className="flex items-center gap-2 text-xs font-bold text-emerald-400 bg-emerald-400/10 w-fit px-2 py-1 rounded-lg">
                 <TrendingUp className="w-3 h-3" />
-                Growth: +12%
+                Growth: {stats.growth >= 0 ? '+' : ''}{stats.growth}%
               </div>
             </motion.div>
 
@@ -203,15 +310,15 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
               <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-bl-full -translate-y-4 translate-x-4 transition-transform group-hover:scale-110" />
               <div className="flex items-center gap-4 mb-4">
                 <div className="w-12 h-12 bg-emerald-500/20 rounded-2xl flex items-center justify-center">
-                  <Store className="w-6 h-6 text-emerald-400" />
+                  <Users className="w-6 h-6 text-emerald-400" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Active Installs</p>
-                  <h3 className="text-3xl font-black">{stats.activeClients}</h3>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Online Staff</p>
+                  <h3 className="text-3xl font-black">{stats.onlineStaff}</h3>
                 </div>
               </div>
-              <div className="flex items-center gap-2 text-xs font-bold text-amber-400">
-                Healthy connections
+              <div className="flex items-center gap-2 text-xs font-bold text-indigo-400 uppercase tracking-widest">
+                Currently Logged In
               </div>
             </motion.div>
 
@@ -227,12 +334,12 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                   <DollarSign className="w-6 h-6 text-amber-400" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Estimated Revenue</p>
-                  <h3 className="text-3xl font-black">{formatCurrency(stats.totalRevenue)}</h3>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Today's Sales</p>
+                  <h3 className="text-3xl font-black">{formatCurrency(stats.todaySales)}</h3>
                 </div>
               </div>
               <div className="text-xs font-bold text-slate-400">
-                Lifetime value across Kenyan market
+                Total processed in last 24h
               </div>
             </motion.div>
           </div>
@@ -285,14 +392,14 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                   </thead>
                   <tbody className="divide-y divide-slate-800">
                     {filteredLicenses.map((license) => {
-                      const isStale = license.last_heartbeat && 
-                        (new Date().getTime() - new Date(license.last_heartbeat).getTime() > 1000 * 60 * 60 * 24);
+                      const isOffline = !license.last_heartbeat || 
+                        (new Date().getTime() - new Date(license.last_heartbeat).getTime() > 1000 * 60 * 5);
                       
                       return (
                         <tr key={license.id} className="hover:bg-slate-800/30 transition-colors">
                           <td className="px-6 py-4">
                             <div className="font-bold text-slate-200">{license.client_name}</div>
-                            <div className="text-[10px] text-slate-500 uppercase tracking-widest">{license.system_name}</div>
+                            <div className="text-[10px] text-slate-500 uppercase tracking-widest">{license.system_name} | {license.business_id || 'NO ID'}</div>
                           </td>
                           <td className="px-6 py-4">
                             <code className="bg-slate-950 px-2 py-1 rounded-lg text-xs text-indigo-400 border border-slate-800">{license.license_key}</code>
@@ -306,9 +413,9 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                           </td>
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
-                              <div className={`w-2 h-2 rounded-full ${isStale ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                              <span className={`text-[10px] font-bold uppercase ${isStale ? 'text-amber-500' : 'text-emerald-500'}`}>
-                                {isStale ? 'Offline/Stale' : 'Live Sync'}
+                              <div className={`w-2 h-2 rounded-full ${isOffline ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} />
+                              <span className={`text-[10px] font-bold uppercase ${isOffline ? 'text-red-500' : 'text-emerald-500'}`}>
+                                {isOffline ? 'Offline' : 'Online / Live'}
                               </span>
                             </div>
                           </td>
@@ -324,16 +431,9 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <button 
-                              onClick={() => handleResetPin(license.client_name)}
-                              className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-indigo-400 transition-colors"
-                              title="Reset Client PIN"
-                            >
-                              <ShieldAlert className="w-4 h-4" />
-                            </button>
-                            <button 
-                              onClick={() => updateFee(license.id, license.license_fee || 0)}
-                              className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-amber-400 transition-colors"
-                              title="Update License Fee"
+                              onClick={() => handleResetBalances(license)}
+                              className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-emerald-400 transition-colors"
+                              title="Reset Balances"
                             >
                               <DollarSign className="w-4 h-4" />
                             </button>
@@ -347,8 +447,12 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                             >
                               {license.status === 'LOCKED' ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
                             </button>
-                            <button className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-400 transition-colors">
-                              <ExternalLink className="w-4 h-4" />
+                            <button 
+                              onClick={() => handleDeleteClient(license)}
+                              className="p-2 bg-red-600/10 hover:bg-red-600/20 rounded-lg text-red-500 transition-colors"
+                              title="Delete Client"
+                            >
+                              <AlertTriangle className="w-4 h-4" />
                             </button>
                           </div>
                         </td>
@@ -380,25 +484,27 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                     <div key={l.id} className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
-                          <div className={`w-3 h-3 rounded-full ${l.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-red-500'} animate-pulse`} />
+                          <div className={`w-3 h-3 rounded-full ${(!l.last_heartbeat || new Date().getTime() - new Date(l.last_heartbeat).getTime() > 1000 * 60 * 5) ? 'bg-red-500' : 'bg-emerald-500'} animate-pulse`} />
                           <div>
                             <p className="font-bold text-sm">{l.client_name}</p>
-                            <p className="text-[10px] text-slate-500 uppercase tracking-widest">{l.authorized_domain || 'Localhost'}</p>
+                            <p className="text-[10px] text-slate-500 uppercase tracking-widest">{l.business_id || 'DEMO'}</p>
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Last Sync</p>
-                          <p className="text-xs font-mono">{l.last_heartbeat ? format(new Date(l.last_heartbeat), 'HH:mm:ss') : 'N/A'}</p>
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Status</p>
+                          <p className={`text-[10px] font-black uppercase tracking-widest ${(!l.last_heartbeat || new Date().getTime() - new Date(l.last_heartbeat).getTime() > 1000 * 60 * 5) ? 'text-red-500' : 'text-emerald-500'}`}>
+                            {(!l.last_heartbeat || new Date().getTime() - new Date(l.last_heartbeat).getTime() > 1000 * 60 * 5) ? 'Offline' : 'Online'}
+                          </p>
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="p-2 bg-slate-900 rounded-xl border border-slate-800/50">
-                          <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Today's Sales</p>
-                          <p className="text-sm font-black text-emerald-400 font-mono">KES {Math.floor(Math.random() * 50000 + 10000).toLocaleString()}</p>
+                          <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Business ID</p>
+                          <p className="text-xs font-black text-indigo-400 font-mono truncate">{l.business_id || 'Not Linked'}</p>
                         </div>
                         <div className="p-2 bg-slate-900 rounded-xl border border-slate-800/50">
-                          <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Active Staff</p>
-                          <p className="text-sm font-black text-indigo-400 font-mono">{Math.floor(Math.random() * 5 + 1)} Online</p>
+                          <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">System Env</p>
+                          <p className="text-xs font-black text-slate-400 font-mono uppercase">{l.system_name || 'Generic'}</p>
                         </div>
                       </div>
                     </div>

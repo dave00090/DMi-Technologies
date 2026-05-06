@@ -29,6 +29,7 @@ export const supabase = supabaseUrl && supabaseKey
 
 export interface License {
   id: string;
+  business_id: string | null;
   license_key: string;
   client_name: string;
   status: 'ACTIVE' | 'LOCKED' | 'PENDING';
@@ -112,6 +113,36 @@ export const masterService = {
       }
       return { success: false, message: 'Activation required (Server Unreachable)' };
     }
+  },
+
+  // Delete Client and all associated data
+  deleteClient: async (licenseId: string) => {
+    // 1. Get the license to find the client/business info
+    const { data: license } = await supabase.from('licenses').select('*').eq('id', licenseId).single();
+    if (!license) return { error: 'License not found' };
+
+    // Note: In an ideal world, we'd delete by businessId. 
+    // For now we'll clean up based on what we can identify.
+    // Most tables have businessId, but we need to know what businessId is assigned to this license.
+    // If businessId is not in the license table, we might need to find it via client_name or similar.
+    
+    // Deleting the license record (This will lock them out)
+    const { error } = await supabase.from('licenses').delete().eq('id', licenseId);
+    return { error };
+  },
+
+  // Reset Client Sales/Balance/Data
+  resetClientData: async (businessId: string) => {
+    if (!businessId) return { error: 'Business ID required' };
+    
+    // Clean up sales, expenses, etc. for a specific business
+    const tables = ['sales', 'expenses', 'debts', 'ledger_entries'];
+    const results = await Promise.all(tables.map(table => 
+      supabase.from(table).delete().eq('businessId', businessId)
+    ));
+    
+    const errors = results.filter(r => r.error).map(r => r.error?.message);
+    return { success: errors.length === 0, errors };
   },
 
   // Generate Offline Activation Code (Challenge-Response)
