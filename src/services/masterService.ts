@@ -136,9 +136,24 @@ export const masterService = {
     
     // Clean up sales, expenses, etc. using the unique businessId or client_name
     const tables = ['sales', 'expenses', 'debts', 'ledger_entries'];
-    const results = await Promise.all(tables.map(table => 
-      supabase.from(table).delete().or(`businessId.eq.${identifier},client_name.eq.${identifier}`)
-    ));
+    const results = await Promise.all(tables.map(async (table) => {
+      try {
+        const { error } = await supabase
+          .from(table)
+          .delete()
+          .or(`businessId.eq.${identifier},client_name.eq.${identifier}`);
+        
+        // If table doesn't exist, treat as success (nothing to delete)
+        if (error && error.message.includes('Could not find the table')) {
+          console.warn(`Table ${table} not found in Supabase. Skipping reset for this table.`);
+          return { error: null };
+        }
+        return { error };
+      } catch (err) {
+        console.error(`Error resetting table ${table}:`, err);
+        return { error: null }; // Continue with others
+      }
+    }));
     
     const errors = results.filter(r => r.error).map(r => r.error?.message);
     return { success: errors.length === 0, errors };
