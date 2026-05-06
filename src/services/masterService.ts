@@ -1,7 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseUrlRaw = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
+// Sanitize URL: Remove trailing slashes and common API path suffixes that can break the SDK
+const supabaseUrl = supabaseUrlRaw.replace(/\/+$/, '').replace(/\/rest\/v1\/?$/, '');
 
 // Initialize client only if URL and Key are present to prevent crashes on startup
 const mockSupabase = { 
