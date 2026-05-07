@@ -26,6 +26,7 @@ interface MasterAdminProps {
 
 export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
   const [licenses, setLicenses] = useState<License[]>([]);
+  const [recentSales, setRecentSales] = useState<any[]>([]);
   const [stats, setStats] = useState({ 
     totalClients: 0, 
     activeClients: 0, 
@@ -90,7 +91,11 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
       // 2. Fetch Sales for Metrics (Handle missing 'sales' table)
       let currentSales: any[] = [];
       try {
-        const { data: salesData, error: salesError } = await supabase.from('sales').select('amount, timestamp, client_name');
+        const { data: salesData, error: salesError } = await supabase
+          .from('sales')
+          .select('id, amount, timestamp, client_name, category')
+          .order('timestamp', { ascending: false });
+        
         health.push({ table: 'sales', status: (salesError && salesError.message.includes('not found')) ? 'missing' : 'ok' });
         
         if (salesError) {
@@ -99,17 +104,19 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
           }
         } else {
           currentSales = salesData || [];
+          setRecentSales(currentSales.slice(0, 10));
         }
       } catch (e) {
         health.push({ table: 'sales', status: 'missing' });
       }
       
-      // Get current date in UTC to match Supabase ISO strings
+      // Get current date in locally matching Supabase ISO strings
       const now = new Date();
-      const todayStr = now.toISOString().split('T')[0];
+      // Use local date string to match what users expect for "today"
+      const localToday = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
       
       const todaySales = currentSales
-        .filter(s => s.timestamp?.startsWith(todayStr))
+        .filter(s => s.timestamp?.startsWith(localToday))
         .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
         
       const totalRev = currentSales.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
@@ -220,8 +227,7 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
     const generateSegment = () => Array.from({length: 4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
     const licenseKey = `DMI-${generateSegment()}-${generateSegment()}-${generateSegment()}`;
     const id = crypto.randomUUID();
-    console.log('Attempting to create license with ID:', id);
-
+    
     try {
       const payload = {
         id,
@@ -611,21 +617,20 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/50">
-                      {licenses.slice(0, 10).map(l => (
-                         // Show recent license fee activity as a proxy for sales if sync is fresh
-                         <tr key={l.id} className="group">
-                           <td className="py-4 font-bold text-sm text-slate-300">{l.client_name}</td>
+                      {recentSales.map(sale => (
+                         <tr key={sale.id} className="group">
+                           <td className="py-4 font-bold text-sm text-slate-300">{sale.client_name}</td>
                            <td className="py-4 text-[10px] font-black uppercase text-indigo-400/70 tracking-widest">
-                             {l.status === 'PENDING' ? 'License Order' : 'License Sale'}
+                             {sale.category || 'License Fee'}
                            </td>
-                           <td className="py-4 font-black text-slate-100">{formatCurrency(l.license_fee || 0)}</td>
-                           <td className="py-4 text-xs text-slate-500">{format(new Date(l.created_at), 'MMM dd, HH:mm')}</td>
+                           <td className="py-4 font-black text-slate-100">{formatCurrency(sale.amount || 0)}</td>
+                           <td className="py-4 text-xs text-slate-500">{sale.timestamp ? format(new Date(sale.timestamp), 'MMM dd, HH:mm') : '---'}</td>
                            <td className="py-4 text-right">
                              <span className="px-2 py-1 bg-emerald-500/10 text-emerald-500 text-[8px] font-black uppercase rounded">Confirmed</span>
                            </td>
                          </tr>
                       ))}
-                      {licenses.length === 0 && (
+                      {recentSales.length === 0 && (
                         <tr>
                           <td colSpan={5} className="py-12 text-center text-slate-600 text-sm font-bold uppercase italic tracking-widest">No transaction records found in cloud</td>
                         </tr>
