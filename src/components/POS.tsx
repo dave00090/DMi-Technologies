@@ -405,7 +405,7 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
           cashierName: user.name,
           loyaltyPointsEarned: loyaltyPoints,
           paymentMethod,
-          mpesaReference: confirmation?.split('Ref: ')[1],
+          mpesaReference: confirmation ? (confirmation.includes('Ref: ') ? confirmation.split('Ref: ')[1] : confirmation) : undefined,
           cashReceived: paymentMethod === 'CASH' && !isNaN(received) ? Number(received.toFixed(2)) : undefined,
           change: paymentMethod === 'CASH' && !isNaN(received) ? Number(changeDue.toFixed(2)) : undefined,
           ...(selectedCustomer ? {
@@ -906,6 +906,54 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
                     }
                   }} className="px-6 py-3 bg-indigo-600 text-white rounded-xl text-xs font-black shadow-lg">APPLY</button>
                   <button onClick={() => setShowDiscountInput(false)} className="p-3 text-slate-400"><X className="w-5 h-5"/></button>
+                </div>
+              ) : paymentMethod === 'MPESA' ? (
+                <div className="flex-1 flex flex-col md:flex-row items-center gap-3 w-full">
+                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+                    <div className="relative">
+                      <div className="absolute left-3 top-2 text-[10px] font-black text-indigo-400 uppercase tracking-tighter">M-Pesa Phone Number</div>
+                      <input
+                        type="tel"
+                        placeholder="07xx xxx xxx"
+                        className="w-full bg-white border-2 border-indigo-200 rounded-xl px-3 pt-5 pb-2 text-indigo-600 font-extrabold text-lg outline-none focus:border-indigo-400"
+                        value={mpesaPhone}
+                        onChange={(e) => setMpesaPhone(e.target.value)}
+                      />
+                    </div>
+                    <div className="relative">
+                      <div className="absolute left-3 top-2 text-[10px] font-black text-indigo-400 uppercase tracking-tighter">Transaction Ref (Optional)</div>
+                      <input
+                        type="text"
+                        placeholder="ABC123XYZ"
+                        className="w-full bg-white border-2 border-indigo-200 rounded-xl px-3 pt-5 pb-2 text-indigo-600 font-extrabold text-lg outline-none focus:border-indigo-400"
+                        value={mpesaConfirmation || ''}
+                        onChange={(e) => setMpesaConfirmation(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      if (mpesaPhone.length < 10) {
+                        setError("PLEASE ENTER A VALID PHONE NUMBER");
+                        return;
+                      }
+                      setMpesaStatus('CONFIRMED');
+                      if (!mpesaConfirmation) {
+                        setMpesaConfirmation('Confirmed Ref: ' + Math.random().toString(36).substring(2, 10).toUpperCase());
+                      }
+                      setSuccess("MPESA PAYMENT CONFIRMED!");
+                    }}
+                    className={`px-8 py-4 rounded-xl text-xs font-black shadow-lg transition-all animate-in zoom-in-95 duration-200 whitespace-nowrap ${
+                      mpesaStatus === 'CONFIRMED' ? 'bg-emerald-600 text-white' : 'bg-indigo-600 text-white animate-pulse'
+                    }`}
+                  >
+                    {mpesaStatus === 'CONFIRMED' ? (
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4" />
+                        <span>PAYMENT CONFIRMED</span>
+                      </div>
+                    ) : 'CONFIRM MPESA'}
+                  </button>
                 </div>
               ) : (
                 <>
