@@ -104,14 +104,14 @@ window.addEventListener('storage', async (event) => {
 });
 
 // Helper to get data from localStorage
-export const getLocal = <T extends unknown>(key: string, defaultValue: T): T => {
+export function getLocal<T>(key: string, defaultValue: T): T {
   if (dbCache[key] !== undefined && dbCache[key] !== null) {
     return dbCache[key] as T;
   }
   const data = localStorage.getItem(key);
   if (data === '__idb_ref__') return defaultValue; // Should have been loaded by initDb
   return data ? JSON.parse(data) : defaultValue;
-};
+}
 
 // Helper to offload large fields (images) to IndexedDB
 const offloadLargeFields = async (obj: any, key: string): Promise<any> => {
@@ -148,7 +148,7 @@ const offloadLargeFields = async (obj: any, key: string): Promise<any> => {
 };
 
 // Helper to set data to localStorage with automatic IndexedDB offloading for large fields
-export const setLocal = async <T extends unknown>(key: string, data: T): Promise<void> => {
+export async function setLocal<T>(key: string, data: T): Promise<void> {
   // Update cache immediately
   dbCache[key] = data;
   
@@ -202,7 +202,7 @@ export const setLocal = async <T extends unknown>(key: string, data: T): Promise
 
   // Dispatch global sync event for in-tab listeners
   window.dispatchEvent(new CustomEvent('local-db-update', { detail: { key } }));
-};
+}
 
 // Helper to remove data from both localStorage and IndexedDB
 export const removeLocal = async (key: string): Promise<void> => {
