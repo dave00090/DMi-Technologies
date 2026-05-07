@@ -65,7 +65,15 @@ export const masterService = {
         .single();
 
       if (error || !data) {
-        // Check offline cache
+        // If we are online and get a specific "Not Found" error, the license was deleted/revoked
+        const isNotFoundError = error && (error.code === 'PGRST116' || error.message?.includes('0 rows'));
+        
+        if (isNotFoundError) {
+          localStorage.removeItem(cacheKey);
+          return { success: false, message: 'License Revoked/Deleted', isLocked: true };
+        }
+
+        // Check offline cache for genuine connection errors
         const cached = localStorage.getItem(cacheKey);
         if (cached) {
           try {

@@ -30,7 +30,7 @@ import { InstallPrompt } from './components/InstallPrompt';
 import { MasterAdmin } from './components/MasterAdmin';
 import { MasterLogin } from './components/MasterLogin';
 import { PenaltyScreen } from './components/PenaltyScreen';
-import { masterService } from './services/masterService';
+import { masterService, supabase } from './services/masterService';
 
 export default function App() {
   const [isActivated, setIsActivated] = useState(localDb.isActivated());
@@ -57,10 +57,10 @@ export default function App() {
 
   useEffect(() => {
     localDb.vacuum();
+    const isActivatedLocally = localDb.isActivated();
     
     // License Heartbeat & Anti-Piracy Check
     const checkLicense = async () => {
-      const isActivatedLocally = localDb.isActivated();
       if (!isActivatedLocally) return;
 
       const licenseKey = localStorage.getItem('dmi_pos_license_key');
@@ -71,6 +71,11 @@ export default function App() {
         const result = await masterService.verifyLicense(licenseKey, fingerPrint, domain);
         if (!result.success && (result.isLocked || result.securityBreach)) {
           setIsSystemLocked(true);
+          // If explicitly revoked by server, we should also deactivate local trigger
+          if (result.message?.includes('Revoked') || result.message?.includes('Deleted')) {
+            await localDb.deactivate();
+            setIsActivated(false);
+          }
         }
       }
     };
@@ -82,8 +87,44 @@ export default function App() {
     }
 
     checkLicense();
+    
+    // Real-time License Tracking for immediate lock/unlock
+    const licenseKey = localStorage.getItem('dmi_pos_license_key');
+    let subscription: { unsubscribe: () => void } | null = null;
+    
+    if (licenseKey && isActivatedLocally) {
+      subscription = supabase
+        .channel(`license-watch-${licenseKey.slice(0, 8)}`)
+        .on('postgres_changes', 
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'licenses',
+            filter: `license_key=eq.${licenseKey}`
+          }, 
+          (payload) => {
+            if (payload.eventType === 'DELETE') {
+              setIsSystemLocked(true);
+              localDb.deactivate();
+              setIsActivated(false);
+            } else if (payload.eventType === 'UPDATE') {
+              const newStatus = payload.new.status;
+              if (newStatus === 'LOCKED') {
+                setIsSystemLocked(true);
+              } else if (newStatus === 'ACTIVE') {
+                setIsSystemLocked(false);
+              }
+            }
+          }
+        )
+        .subscribe();
+    }
+
     const interval = setInterval(checkLicense, 1000 * 60 * 60); // Every hour
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (subscription) subscription.unsubscribe();
+    };
   }, []);
 
   const getMachineFingerprint = async () => {

@@ -703,6 +703,10 @@ export const localDb = {
     }
     return false;
   },
+  deactivate: async () => {
+    await setLocal(STORAGE_KEYS.IS_ACTIVATED, false);
+    localStorage.removeItem('dmi_pos_license_key');
+  },
 
   // Storage Maintenance
   vacuum: async () => {
