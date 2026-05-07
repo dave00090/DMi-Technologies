@@ -151,24 +151,33 @@ export const masterService = {
   resetClientData: async (identifier: string) => {
     if (!identifier) return { error: 'Identifier required' };
     
-    // Clean up sales, expenses, etc. using the unique businessId or client_name
+    // Clean up sales, expenses, etc. using the unique business_id or client_name
+    // business_id is the primary uuid, client_name is the fallback
     const tables = ['sales', 'expenses', 'debts', 'ledger_entries'];
     const results = await Promise.all(tables.map(async (table) => {
       try {
         const { error } = await supabase
           .from(table)
           .delete()
-          .or(`businessId.eq.${identifier},client_name.eq.${identifier}`);
+          .or(`business_id.eq.${identifier},client_name.eq.${identifier}`);
         
-        // If table doesn't exist, treat as success (nothing to delete)
-        if (error && error.message.includes('Could not find the table')) {
-          console.warn(`Table ${table} not found in Supabase. Skipping reset for this table.`);
-          return { error: null };
+        if (error) {
+          // If table or column doesn't exist, treat as success or warning (nothing to delete)
+          const isMissing = error.message.includes('not found') || 
+                            error.message.includes('column') && error.message.includes('does not exist') ||
+                            error.code === '42703' || // Undefined column
+                            error.code === '42P01';    // Undefined table
+          
+          if (isMissing) {
+            console.warn(`Table or Column not found in Supabase for ${table}. Skipping reset for this table.`);
+            return { error: null };
+          }
+          return { error };
         }
-        return { error };
+        return { error: null };
       } catch (err) {
         console.error(`Error resetting table ${table}:`, err);
-        return { error: null }; // Continue with others
+        return { error: null }; 
       }
     }));
     
