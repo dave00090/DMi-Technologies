@@ -221,34 +221,43 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
     const licenseKey = `DMI-${generateSegment()}-${generateSegment()}-${generateSegment()}`;
     const id = Math.random().toString(36).substring(2) + Date.now().toString(36);
 
-    const { error } = await supabase.from('licenses').insert({
-      id,
-      client_name: clientName,
-      system_name: systemName,
-      license_key: licenseKey,
-      license_fee: Number(fee),
-      status: 'ACTIVE',
-      penalty_amount: Math.floor(Number(fee) * 1.5)
-    });
+    try {
+      const { error } = await supabase.from('licenses').insert({
+        id,
+        client_name: clientName,
+        system_name: systemName,
+        license_key: licenseKey,
+        license_fee: Number(fee),
+        status: 'ACTIVE',
+        penalty_amount: Math.floor(Number(fee) * 1.5)
+      });
 
-    if (error) {
-      alert('Error creating license: ' + error.message);
-    } else {
-      // Record the license fee as a sale for the developer
-      try {
-        await supabase.from('sales').insert({
-          id: Math.random().toString(36).substring(2) + Date.now().toString(36),
-          amount: Number(fee),
-          client_name: clientName,
-          category: 'LICENSE_FEE',
-          timestamp: new Date().toISOString()
-        });
-      } catch (e) {
-        console.warn('Failed to record sale, but license was created:', e);
+      if (error) {
+        alert('Error creating license: ' + error.message);
+      } else {
+        // Record the license fee as a sale for the developer
+        try {
+          await supabase.from('sales').insert({
+            id: Math.random().toString(36).substring(2) + Date.now().toString(36),
+            amount: Number(fee),
+            client_name: clientName,
+            category: 'LICENSE_FEE',
+            timestamp: new Date().toISOString()
+          });
+        } catch (e) {
+          console.warn('Failed to record sale, but license was created:', e);
+        }
+        
+        alert('LICENSE CREATED & PAYMENT LOGGED!\n\nClient: ' + clientName + '\nKey: ' + licenseKey + '\nFee: KES ' + fee);
+        fetchData();
       }
-      
-      alert('LICENSE CREATED & PAYMENT LOGGED!\n\nClient: ' + clientName + '\nKey: ' + licenseKey + '\nFee: KES ' + fee);
-      fetchData();
+    } catch (err: any) {
+      console.error('License creation crash:', err);
+      if (err.message?.includes('Failed to fetch')) {
+        alert('CONNECTION ERROR: Could not reach Supabase. Please check your internet or Supabase URL/Key in Settings.\n\nDetails: ' + err.message);
+      } else {
+        alert('CRITICAL ERROR: ' + (err.message || String(err)));
+      }
     }
   };
 
@@ -277,8 +286,18 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
     l.license_key.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const isConfigMissing = !import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const isPlaceholderConfig = import.meta.env.VITE_SUPABASE_URL?.includes('YOUR_');
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+      {/* Configuration Warning Banner */}
+      {(isConfigMissing || isPlaceholderConfig) && (
+        <div className="bg-amber-500 text-slate-950 px-8 py-2 text-center text-xs font-black uppercase tracking-widest animate-pulse">
+           ⚠️ Supabase Connection Not Configured. Please set VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY in App Settings.
+        </div>
+      )}
+      
       {/* Sidebar / Topbar */}
       <div className="bg-slate-900 border-b border-slate-800 px-8 py-4 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-4">
