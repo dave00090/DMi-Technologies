@@ -382,8 +382,20 @@ export const Customers: React.FC<CustomersProps> = ({ user, businessId, onViewLe
                     <span className="text-xl font-bold">{customer.name.charAt(0)}</span>
                   </div>
                   {totalDebt > 0 && (
-                    <div className="px-3 py-1 bg-rose-500/10 text-rose-500 rounded-full animate-pulse">
-                      <p className="text-[10px] font-black uppercase">In Debt</p>
+                    <div className="flex flex-col gap-1">
+                      <div className="px-2 py-0.5 bg-rose-500/10 text-rose-500 rounded-full inline-block">
+                        <p className="text-[8px] font-black uppercase">In Debt</p>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePayAllCustomerDebts(customer.id);
+                        }}
+                        disabled={isProcessingDebt}
+                        className="px-2 py-0.5 bg-emerald-600 text-white text-[8px] font-black rounded-lg shadow-sm hover:bg-emerald-700 transition-all disabled:opacity-50 active:scale-95 uppercase"
+                      >
+                        {isProcessingDebt ? '...' : 'Clear Debt'}
+                      </button>
                     </div>
                   )}
                 </div>
@@ -453,21 +465,9 @@ export const Customers: React.FC<CustomersProps> = ({ user, businessId, onViewLe
               </div>
 
               {totalDebt > 0 && (
-                <div className="mb-4 bg-rose-500/5 rounded-2xl p-4 flex items-center justify-between border border-rose-500/10">
-                  <div>
-                    <p className="text-[10px] font-bold text-muted uppercase">Total Debt</p>
-                    <p className="text-lg font-black text-rose-500">KSh{totalDebt.toLocaleString()}</p>
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handlePayAllCustomerDebts(customer.id);
-                    }}
-                    disabled={isProcessingDebt}
-                    className="px-4 py-2 bg-emerald-600 text-white text-[10px] font-black rounded-xl shadow-lg hover:bg-emerald-700 transition-all disabled:opacity-50 active:scale-95"
-                  >
-                    {isProcessingDebt ? '...' : 'PAY DEBT'}
-                  </button>
+                <div className="mb-4 bg-rose-500/5 rounded-2xl p-4 border border-rose-500/10">
+                  <p className="text-[10px] font-bold text-muted uppercase">Total Debt</p>
+                  <p className="text-lg font-black text-rose-500">KSh{totalDebt.toLocaleString()}</p>
                 </div>
               )}
 

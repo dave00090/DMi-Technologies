@@ -247,38 +247,39 @@ export const Ledger: React.FC<LedgerProps> = ({ businessId, user, initialSelecti
                           </p>
                         </div>
                       </div>
-                      <div className="text-right">
+                      <div className="text-right flex flex-col items-end">
                         <p className={`text-[10px] font-bold uppercase opacity-60 mb-0.5 ${selectedEntity?.id === entity.id ? 'text-white' : 'text-muted'}`}>
                           Balance
                         </p>
-                        <p className={`font-bold ${
-                          selectedEntity?.id === entity.id 
-                            ? 'text-white' 
-                            : activeTab === 'CUSTOMER' && totalDebtAmount > 0 
-                              ? 'text-rose-500' 
-                              : 'text-ink'
-                        }`}>
-                          {formatCurrency(displayBalance)}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className={`font-bold ${
+                            selectedEntity?.id === entity.id 
+                              ? 'text-white' 
+                              : activeTab === 'CUSTOMER' && totalDebtAmount > 0 
+                                ? 'text-rose-500' 
+                                : 'text-ink'
+                          }`}>
+                            {formatCurrency(displayBalance)}
+                          </p>
+                          {activeTab === 'CUSTOMER' && totalDebtAmount > 0 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handlePayAllDebtsForCustomer(entity.id);
+                              }}
+                              disabled={isProcessing}
+                              className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
+                                selectedEntity?.id === entity.id
+                                  ? 'bg-white text-indigo-600 hover:bg-opacity-90'
+                                  : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                              } disabled:opacity-50`}
+                            >
+                              {isProcessing ? '...' : 'Paid'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
-
-                    {activeTab === 'CUSTOMER' && totalDebtAmount > 0 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePayAllDebtsForCustomer(entity.id);
-                        }}
-                        disabled={isProcessing}
-                        className={`w-full py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                          selectedEntity?.id === entity.id
-                            ? 'bg-white text-indigo-600 hover:bg-opacity-90'
-                            : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                        } disabled:opacity-50`}
-                      >
-                        {isProcessing ? 'Processing...' : 'Clear All Debts'}
-                      </button>
-                    )}
                   </div>
                 );
               })}
