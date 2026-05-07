@@ -148,7 +148,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
         updateVariant(lastVariant.id, 'sku', barcode);
         setIsScannerOpen(false);
       } else {
-        const newId = Math.random().toString(36).substr(2, 9);
+        const newId = crypto.randomUUID();
         const newVariant: Variant = {
           id: newId,
           size: '',
@@ -421,7 +421,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
 
   const addVariant = () => {
     const newVariant: Variant = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: crypto.randomUUID(),
       size: '',
       color: '',
       stock: 0,
@@ -449,7 +449,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
       sizes.forEach(size => {
         colors.forEach(color => {
           newVariants.push({
-            id: Math.random().toString(36).substring(2, 9),
+            id: crypto.randomUUID(),
             size,
             color,
             stock: 0,
@@ -460,7 +460,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
     } else if (sizes.length > 0) {
       sizes.forEach(size => {
         newVariants.push({
-          id: Math.random().toString(36).substring(2, 9),
+          id: crypto.randomUUID(),
           size,
           color: '',
           stock: 0,
@@ -470,7 +470,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
     } else if (colors.length > 0) {
       colors.forEach(color => {
         newVariants.push({
-          id: Math.random().toString(36).substring(2, 9),
+          id: crypto.randomUUID(),
           size: '',
           color,
           stock: 0,

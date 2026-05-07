@@ -219,10 +219,11 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     const generateSegment = () => Array.from({length: 4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
     const licenseKey = `DMI-${generateSegment()}-${generateSegment()}-${generateSegment()}`;
-    const id = Math.random().toString(36).substring(2) + Date.now().toString(36);
+    const id = crypto.randomUUID();
+    console.log('Attempting to create license with ID:', id);
 
     try {
-      const { error } = await supabase.from('licenses').insert({
+      const payload = {
         id,
         client_name: clientName,
         system_name: systemName,
@@ -230,7 +231,9 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
         license_fee: Number(fee),
         status: 'ACTIVE',
         penalty_amount: Math.floor(Number(fee) * 1.5)
-      });
+      };
+      
+      const { error } = await supabase.from('licenses').insert(payload);
 
       if (error) {
         alert('Error creating license: ' + error.message);
@@ -238,7 +241,7 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
         // Record the license fee as a sale for the developer
         try {
           await supabase.from('sales').insert({
-            id: Math.random().toString(36).substring(2) + Date.now().toString(36),
+            id: crypto.randomUUID(),
             amount: Number(fee),
             client_name: clientName,
             category: 'LICENSE_FEE',
