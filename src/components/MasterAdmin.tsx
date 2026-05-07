@@ -93,10 +93,14 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
       try {
         const { data: salesData, error: salesError } = await supabase
           .from('sales')
-          .select('id, amount, timestamp, client_name, category')
+          .select('*')
           .order('timestamp', { ascending: false });
         
-        health.push({ table: 'sales', status: (salesError && salesError.message.includes('not found')) ? 'missing' : 'ok' });
+        // Fix health status logic: only 'ok' if no error
+        const salesStatus = salesError 
+          ? (salesError.message.includes('not found') ? 'missing' : 'missing') 
+          : 'ok';
+        health.push({ table: 'sales', status: salesStatus });
         
         if (salesError) {
           if (!salesError.message.includes('not found')) {
@@ -110,13 +114,15 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
         health.push({ table: 'sales', status: 'missing' });
       }
       
-      // Get current date in locally matching Supabase ISO strings
       const now = new Date();
-      // Use local date string to match what users expect for "today"
-      const localToday = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+      const todayDateStr = now.toDateString();
       
       const todaySales = currentSales
-        .filter(s => s.timestamp?.startsWith(localToday))
+        .filter(s => {
+          const sDate = s.timestamp || s.created_at;
+          if (!sDate) return false;
+          return new Date(sDate).toDateString() === todayDateStr;
+        })
         .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
         
       const totalRev = currentSales.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
@@ -128,11 +134,11 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
       const lastMonthStr = lastMonthDate.toISOString().slice(0, 7);
       
       const thisMonthSales = currentSales
-        .filter(s => s.timestamp?.startsWith(thisMonthStr))
+        .filter(s => (s.timestamp || s.created_at)?.startsWith(thisMonthStr))
         .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
         
       const lastMonthSales = currentSales
-        .filter(s => s.timestamp?.startsWith(lastMonthStr))
+        .filter(s => (s.timestamp || s.created_at)?.startsWith(lastMonthStr))
         .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
       
       let growth = 0;
@@ -246,15 +252,21 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
       } else {
         // Record the license fee as a sale for the developer
         try {
-          await supabase.from('sales').insert({
+          const { error: saleError } = await supabase.from('sales').insert({
             id: crypto.randomUUID(),
             amount: Number(fee),
             client_name: clientName,
             category: 'LICENSE_FEE',
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            created_at: new Date().toISOString()
           });
-        } catch (e) {
-          console.warn('Failed to record sale, but license was created:', e);
+          
+          if (saleError) {
+            console.error('Sale log failed:', saleError);
+            alert('Note: License created but payment logging failed: ' + saleError.message);
+          }
+        } catch (e: any) {
+          console.warn('Failed to record sale:', e);
         }
         
         alert('LICENSE CREATED & PAYMENT LOGGED!\n\nClient: ' + clientName + '\nKey: ' + licenseKey + '\nFee: KES ' + fee);
@@ -401,15 +413,15 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
               <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-bl-full -translate-y-4 translate-x-4 transition-transform group-hover:scale-110" />
               <div className="flex items-center gap-4 mb-4">
                 <div className="w-12 h-12 bg-emerald-500/20 rounded-2xl flex items-center justify-center">
-                  <Users className="w-6 h-6 text-emerald-400" />
+                  <TrendingUp className="w-6 h-6 text-emerald-400" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Online Staff</p>
-                  <h3 className="text-3xl font-black">{stats.onlineStaff}</h3>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Total Revenue</p>
+                  <h3 className="text-3xl font-black">{formatCurrency(stats.totalRevenue)}</h3>
                 </div>
               </div>
-              <div className="flex items-center gap-2 text-xs font-bold text-indigo-400 uppercase tracking-widest">
-                Currently Logged In
+              <div className="text-xs font-bold text-slate-400">
+                Lifetime revenue generated
               </div>
             </motion.div>
 
@@ -624,7 +636,9 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                              {sale.category || 'License Fee'}
                            </td>
                            <td className="py-4 font-black text-slate-100">{formatCurrency(sale.amount || 0)}</td>
-                           <td className="py-4 text-xs text-slate-500">{sale.timestamp ? format(new Date(sale.timestamp), 'MMM dd, HH:mm') : '---'}</td>
+                           <td className="py-4 text-xs text-slate-500">
+                             { (sale.timestamp || sale.created_at) ? format(new Date(sale.timestamp || sale.created_at), 'MMM dd, HH:mm') : '---' }
+                           </td>
                            <td className="py-4 text-right">
                              <span className="px-2 py-1 bg-emerald-500/10 text-emerald-500 text-[8px] font-black uppercase rounded">Confirmed</span>
                            </td>
