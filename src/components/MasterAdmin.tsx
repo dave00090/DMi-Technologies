@@ -276,7 +276,12 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
           
           if (saleError) {
             console.error('Sale log failed:', saleError);
-            if (!saleError.message.includes('not found')) {
+            // Suppress alert if it's just a missing table error, as we have a fallback in the UI
+            const isMissingTable = saleError.message.includes('not found') || 
+                                  saleError.message.includes('schema cache') || 
+                                  saleError.message.includes('relation "sales" does not exist');
+            
+            if (!isMissingTable) {
               alert('Note: License created but payment logging failed: ' + saleError.message);
             }
           }
