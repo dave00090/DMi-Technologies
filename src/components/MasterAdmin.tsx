@@ -108,11 +108,24 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
           }
         } else {
           currentSales = salesData || [];
-          setRecentSales(currentSales.slice(0, 10));
         }
       } catch (e) {
         health.push({ table: 'sales', status: 'missing' });
       }
+
+      // FALLBACK: If sales table is missing, use licenses as revenue source
+      if (currentSales.length === 0 && licenseData && licenseData.length > 0) {
+        currentSales = licenseData.map(l => ({
+          id: l.id,
+          amount: Number(l.license_fee || 0),
+          client_name: l.client_name,
+          category: 'LICENSE_FEE',
+          timestamp: l.created_at,
+          created_at: l.created_at
+        }));
+      }
+      
+      setRecentSales(currentSales.slice(0, 10));
       
       const now = new Date();
       const todayDateStr = now.toDateString();
@@ -263,7 +276,9 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
           
           if (saleError) {
             console.error('Sale log failed:', saleError);
-            alert('Note: License created but payment logging failed: ' + saleError.message);
+            if (!saleError.message.includes('not found')) {
+              alert('Note: License created but payment logging failed: ' + saleError.message);
+            }
           }
         } catch (e: any) {
           console.warn('Failed to record sale:', e);
