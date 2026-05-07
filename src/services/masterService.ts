@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { v4 as uuidv4 } from 'uuid';
 
 const supabaseUrlRaw = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -176,7 +177,7 @@ export const masterService = {
 
   reportPiracy: async (licenseId: string, message: string) => {
     await supabase.from('piracy_alerts').insert({
-      id: Math.random().toString(36).substring(2) + Date.now().toString(36),
+      id: uuidv4(),
       license_id: licenseId,
       message,
       timestamp: new Date().toISOString(),

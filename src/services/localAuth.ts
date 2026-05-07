@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { UserProfile, Role } from '../types';
 import { getLocal, setLocal, removeLocal } from './localDb';
 import { supabase } from './masterService';
@@ -23,7 +24,7 @@ export const localAuth = {
       // Create a default admin if it's the first user or matches a specific name
       const role: Role = users.length === 0 ? 'admin' : 'staff';
       user = {
-        uid: crypto.randomUUID(),
+        uid: uuidv4(),
         name: username.charAt(0).toUpperCase() + username.slice(1),
         username,
         email: `${username}@dmipos.internal`,
@@ -40,7 +41,7 @@ export const localAuth = {
     
     // Add to local login history
     const historyItem = {
-      id: Math.random().toString(36).substring(2) + Date.now().toString(36),
+      id: uuidv4(),
       userId: user.uid,
       userName: user.name,
       timestamp: new Date().toISOString(),
@@ -64,7 +65,7 @@ export const localAuth = {
   register: async (data: { name: string, username: string, email: string, role: Role }): Promise<UserProfile> => {
     const users = getLocal<UserProfile[]>(STORAGE_KEYS.USERS, []);
     const newUser: UserProfile = {
-      uid: crypto.randomUUID(),
+      uid: uuidv4(),
       ...data,
       lastLogin: new Date().toISOString()
     };
