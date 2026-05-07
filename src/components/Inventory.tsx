@@ -1025,7 +1025,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                     required
                     type="text"
                     className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                    value={formData.name}
+                    value={formData.name || ''}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   />
                 </div>
@@ -1051,7 +1051,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                       <input
                         type="date"
                         className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                        value={formData.expiryDate}
+                        value={formData.expiryDate || ''}
                         onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
                       />
                     </div>
@@ -1060,7 +1060,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                       <input
                         type="text"
                         className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                        value={formData.batchNumber}
+                        value={formData.batchNumber || ''}
                         onChange={(e) => setFormData({ ...formData, batchNumber: e.target.value })}
                       />
                     </div>
@@ -1074,7 +1074,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                       <input
                         type="text"
                         className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                        value={formData.brand}
+                        value={formData.brand || ''}
                         onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
                       />
                     </div>
@@ -1083,7 +1083,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                       <input
                         type="text"
                         className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                        value={formData.warranty}
+                        value={formData.warranty || ''}
                         onChange={(e) => setFormData({ ...formData, warranty: e.target.value })}
                       />
                     </div>
@@ -1097,7 +1097,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                       <input
                         type="text"
                         className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                        value={formData.partNumber}
+                        value={formData.partNumber || ''}
                         onChange={(e) => setFormData({ ...formData, partNumber: e.target.value })}
                       />
                     </div>
@@ -1106,7 +1106,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                       <input
                         type="text"
                         className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                        value={formData.modelCompatibility}
+                        value={formData.modelCompatibility || ''}
                         onChange={(e) => setFormData({ ...formData, modelCompatibility: e.target.value })}
                         placeholder="e.g. Toyota Corolla 2015-2020"
                       />
@@ -1119,7 +1119,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                     <label className="text-xs font-bold text-muted uppercase">Ingredients / Description</label>
                     <textarea
                       className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-h-[80px]"
-                      value={formData.description}
+                      value={formData.description || ''}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                       placeholder="e.g. Served with chips and salad"
                     />
@@ -1176,7 +1176,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                     <label className="text-xs font-bold text-muted uppercase">Fuel Type</label>
                     <select
                       className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                      value={formData.fuelType}
+                      value={formData.fuelType || ''}
                       onChange={(e) => setFormData({ ...formData, fuelType: e.target.value as any })}
                     >
                       <option value="">Select Fuel Type</option>
@@ -1221,7 +1221,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                       <input
                         type="text"
                         className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                        value={formData.volume}
+                        value={formData.volume || ''}
                         onChange={(e) => setFormData({ ...formData, volume: e.target.value })}
                         placeholder="e.g. 750ml"
                       />

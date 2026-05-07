@@ -621,7 +621,7 @@ export const HRM: React.FC<HRMProps> = ({ businessId, shopId, user }) => {
                   type="text"
                   required
                   className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                  value={formData.name}
+                  value={formData.name || ''}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="Employee Full Name"
                 />
@@ -634,7 +634,7 @@ export const HRM: React.FC<HRMProps> = ({ businessId, shopId, user }) => {
                     type="text"
                     required
                     className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                    value={formData.role}
+                    value={formData.role || ''}
                     onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                     placeholder="e.g. Cashier"
                   />
@@ -659,7 +659,7 @@ export const HRM: React.FC<HRMProps> = ({ businessId, shopId, user }) => {
                     type="tel"
                     required
                     className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                    value={formData.phone}
+                    value={formData.phone || ''}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     placeholder="07..."
                   />
@@ -670,7 +670,7 @@ export const HRM: React.FC<HRMProps> = ({ businessId, shopId, user }) => {
                     type="date"
                     required
                     className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                    value={formData.hireDate}
+                    value={formData.hireDate || ''}
                     onChange={(e) => setFormData({ ...formData, hireDate: e.target.value })}
                   />
                 </div>
@@ -682,7 +682,7 @@ export const HRM: React.FC<HRMProps> = ({ businessId, shopId, user }) => {
                   <input
                     type="email"
                     className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                    value={formData.email}
+                    value={formData.email || ''}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     placeholder="employee@example.com"
                   />
@@ -691,7 +691,7 @@ export const HRM: React.FC<HRMProps> = ({ businessId, shopId, user }) => {
                   <label className="text-xs font-bold text-muted uppercase">Initial Status</label>
                   <select
                     className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                    value={formData.status}
+                    value={formData.status || ''}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
                   >
                     <option value="ACTIVE">Active</option>

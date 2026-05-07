@@ -175,7 +175,7 @@ export const Settings: React.FC<SettingsProps> = ({ user, businessId, shopId, on
                 <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
                 <input
                   type="text"
-                  value={businessProfile.name}
+                  value={businessProfile.name || ''}
                   onChange={(e) => handleUpdateBusiness({ name: e.target.value })}
                   className="w-full pl-12 pr-4 py-3 bg-muted border border-border rounded-xl text-ink focus:ring-2 focus:ring-indigo-500 outline-none"
                   placeholder="DMi Technologies"
@@ -215,7 +215,7 @@ export const Settings: React.FC<SettingsProps> = ({ user, businessId, shopId, on
                   <Coins className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
                   <input
                     type="text"
-                    value={businessProfile.currency}
+                    value={businessProfile.currency || ''}
                     onChange={(e) => handleUpdateBusiness({ currency: e.target.value })}
                     className="w-full pl-12 pr-4 py-3 bg-muted border border-border rounded-xl text-ink focus:ring-2 focus:ring-indigo-500 outline-none"
                     placeholder="USD"

@@ -443,7 +443,7 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
                       <input
                         type="text"
                         className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                        value={formData.contactPerson}
+                        value={formData.contactPerson || ''}
                         onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
                         placeholder="Full Name"
                       />
@@ -453,7 +453,7 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
                       <input
                         type="text"
                         className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                        value={formData.category}
+                        value={formData.category || ''}
                         onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                         placeholder="e.g. Electronics"
                       />
@@ -477,7 +477,7 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
                       <input
                         type="email"
                         className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                        value={formData.email}
+                        value={formData.email || ''}
                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                         placeholder="vendor@example.com"
                       />
@@ -488,7 +488,7 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
                     <label className="text-xs font-bold text-muted uppercase">Physical Address</label>
                     <textarea
                       className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-h-[80px]"
-                      value={formData.address}
+                      value={formData.address || ''}
                       onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                       placeholder="Street, Building, City"
                     />

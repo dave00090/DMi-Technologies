@@ -657,7 +657,7 @@ export const Customers: React.FC<CustomersProps> = ({ user, businessId, onViewLe
                     required
                     type="text"
                     className="w-full px-4 py-2 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                    value={formData.name}
+                    value={formData.name || ''}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   />
                 </div>
@@ -667,7 +667,7 @@ export const Customers: React.FC<CustomersProps> = ({ user, businessId, onViewLe
                     required
                     type="tel"
                     className="w-full px-4 py-2 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                    value={formData.phone}
+                    value={formData.phone || ''}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   />
                 </div>
