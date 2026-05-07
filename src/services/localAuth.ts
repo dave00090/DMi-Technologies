@@ -1,5 +1,6 @@
 import { UserProfile, Role } from '../types';
 import { getLocal, setLocal, removeLocal } from './localDb';
+import { supabase } from './masterService';
 
 const STORAGE_KEYS = {
   USERS: 'dmi_pos_users',
@@ -37,16 +38,25 @@ export const localAuth = {
 
     await setLocal(STORAGE_KEYS.AUTH_USER, user);
     
-    // Add to login history
-    const history = getLocal<any[]>(STORAGE_KEYS.LOGIN_HISTORY, []);
-    await setLocal(STORAGE_KEYS.LOGIN_HISTORY, [{
-      id: crypto.randomUUID(),
+    // Add to local login history
+    const historyItem = {
+      id: Math.random().toString(36).substring(2) + Date.now().toString(36),
       userId: user.uid,
       userName: user.name,
       timestamp: new Date().toISOString(),
       role: user.role,
       status: 'SUCCESS'
-    }, ...history].slice(0, 100));
+    };
+    
+    const history = getLocal<any[]>(STORAGE_KEYS.LOGIN_HISTORY, []);
+    await setLocal(STORAGE_KEYS.LOGIN_HISTORY, [historyItem, ...history].slice(0, 100));
+
+    // Sync to Supabase for Master Admin visibility
+    try {
+      await supabase.from('login_history').insert(historyItem);
+    } catch (e) {
+      console.warn('Failed to sync login to cloud (offline mode)', e);
+    }
 
     return user;
   },

@@ -12,15 +12,24 @@ const mockSupabase = {
     const handler = {
       select: () => handler,
       order: () => handler,
+      limit: () => handler,
       eq: () => handler,
       single: () => Promise.resolve({ data: null, error: { message: 'Supabase configuration missing' } }),
       update: () => handler,
       insert: () => Promise.resolve({ data: null, error: { message: 'Supabase configuration missing' } }),
+      delete: () => handler,
+      or: () => handler,
+      gt: () => handler,
       // Make it thenable to support direct await
       then: (resolve: any) => resolve({ data: [], error: { message: 'Supabase configuration missing' } })
     };
     return handler;
-  }
+  },
+  channel: () => ({
+    on: function() { return this; },
+    subscribe: () => ({})
+  }),
+  removeChannel: () => Promise.resolve()
 } as any;
 
 export const supabase = supabaseUrl && supabaseKey 

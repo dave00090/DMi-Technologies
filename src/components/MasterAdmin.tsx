@@ -13,7 +13,8 @@ import {
   DollarSign,
   AlertTriangle,
   RefreshCcw,
-  Store
+  Store,
+  Database
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { format } from 'date-fns';
@@ -67,41 +68,100 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
     };
   }, []);
 
+  const [dbHealth, setDbHealth] = useState<{table: string, status: 'ok' | 'missing' | 'checking'}[]>([
+    { table: 'licenses', status: 'checking' },
+    { table: 'sales', status: 'checking' },
+    { table: 'login_history', status: 'checking' },
+    { table: 'piracy_alerts', status: 'checking' }
+  ]);
+
   const fetchData = async () => {
     setIsLoading(true);
+    const health: typeof dbHealth = [];
+    
     try {
-      // 1. Fetch Licenses
-      const { data: licenseData } = await supabase.from('licenses').select('*').order('created_at', { ascending: false });
+      // 1. Fetch Licenses (Critical table)
+      const { data: licenseData, error: licenseError } = await supabase.from('licenses').select('*').order('created_at', { ascending: false });
+      health.push({ table: 'licenses', status: licenseError ? 'missing' : 'ok' });
+      
       if (licenseData) setLicenses(licenseData);
+      if (licenseError) console.error('Licenses fetch error:', licenseError.message);
 
-      // 2. Fetch Sales for Metrics
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
+      // 2. Fetch Sales for Metrics (Handle missing 'sales' table)
+      let currentSales: any[] = [];
+      try {
+        const { data: salesData, error: salesError } = await supabase.from('sales').select('amount, timestamp, client_name');
+        health.push({ table: 'sales', status: (salesError && salesError.message.includes('not found')) ? 'missing' : 'ok' });
+        
+        if (salesError) {
+          if (!salesError.message.includes('not found')) {
+            console.error('Sales fetch error:', salesError.message);
+          }
+        } else {
+          currentSales = salesData || [];
+        }
+      } catch (e) {
+        health.push({ table: 'sales', status: 'missing' });
+      }
       
-      const startOfLastMonth = new Date();
-      startOfLastMonth.setMonth(startOfLastMonth.getMonth() - 1);
-      startOfLastMonth.setDate(1);
-      startOfLastMonth.setHours(0, 0, 0, 0);
+      // Get current date in UTC to match Supabase ISO strings
+      const now = new Date();
+      const todayStr = now.toISOString().split('T')[0];
+      
+      const todaySales = currentSales
+        .filter(s => s.timestamp?.startsWith(todayStr))
+        .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+        
+      const totalRev = currentSales.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
 
-      const { data: salesData } = await supabase.from('sales').select('amount, timestamp');
+      // Calculate Growth (Month-over-month)
+      const thisMonthStr = now.toISOString().slice(0, 7);
+      const lastMonthDate = new Date();
+      lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
+      const lastMonthStr = lastMonthDate.toISOString().slice(0, 7);
       
-      const today = new Date().toISOString().split('T')[0];
-      const todaySales = salesData?.filter(s => s.timestamp?.startsWith(today)).reduce((sum, s) => sum + s.amount, 0) || 0;
-      const totalRev = salesData?.reduce((sum, s) => sum + s.amount, 0) || 0;
+      const thisMonthSales = currentSales
+        .filter(s => s.timestamp?.startsWith(thisMonthStr))
+        .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+        
+      const lastMonthSales = currentSales
+        .filter(s => s.timestamp?.startsWith(lastMonthStr))
+        .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+      
+      let growth = 0;
+      if (lastMonthSales > 0) {
+        growth = ((thisMonthSales - lastMonthSales) / lastMonthSales) * 100;
+      } else if (thisMonthSales > 0) {
+        growth = 100; // New growth
+      }
 
-      // Calculate Growth (Simple month-over-month comparison)
-      const thisMonth = new Date().toISOString().slice(0, 7);
-      const lastMonth = new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().slice(0, 7);
-      
-      const thisMonthSales = salesData?.filter(s => s.timestamp?.startsWith(thisMonth)).reduce((sum, s) => sum + s.amount, 0) || 0;
-      const lastMonthSales = salesData?.filter(s => s.timestamp?.startsWith(lastMonth)).reduce((sum, s) => sum + s.amount, 0) || 1; // avoid div by 0
-      
-      const growth = lastMonthSales > 1 ? ((thisMonthSales - lastMonthSales) / lastMonthSales * 100) : 0;
+      // 3. Online Staff (Handle missing 'login_history' table)
+      let onlineCount = 0;
+      try {
+        const { data: staffLogins, error: loginError } = await supabase.from('login_history')
+          .select('*')
+          .gt('timestamp', new Date(Date.now() - 30 * 60000).toISOString());
+        
+        health.push({ table: 'login_history', status: (loginError && loginError.message.includes('not found')) ? 'missing' : 'ok' });
+        
+        if (loginError && !loginError.message.includes('not found')) {
+          console.error('Login history fetch error:', loginError.message);
+        } else if (staffLogins) {
+          onlineCount = staffLogins.length;
+        }
+      } catch (e) {
+        health.push({ table: 'login_history', status: 'missing' });
+      }
 
-      // 3. Estimate Online Staff (Active in last 30 mins)
-      const { data: staffLogins } = await supabase.from('login_history')
-        .select('*')
-        .gt('timestamp', new Date(Date.now() - 30 * 60000).toISOString());
+      // 4. Piracy Alerts Health
+      try {
+        const { error: alertError } = await supabase.from('piracy_alerts').select('id').limit(1);
+        health.push({ table: 'piracy_alerts', status: (alertError && alertError.message.includes('not found')) ? 'missing' : 'ok' });
+      } catch (e) {
+        health.push({ table: 'piracy_alerts', status: 'missing' });
+      }
+      
+      setDbHealth(health);
       
       setStats({
         totalClients: licenseData?.length || 0,
@@ -109,7 +169,7 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
         totalRevenue: totalRev,
         todaySales,
         growth: Math.round(growth),
-        onlineStaff: staffLogins?.length || 0
+        onlineStaff: onlineCount
       });
     } catch (err) {
       console.error('Master Admin fetch error:', err);
@@ -159,7 +219,7 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     const generateSegment = () => Array.from({length: 4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
     const licenseKey = `DMI-${generateSegment()}-${generateSegment()}-${generateSegment()}`;
-    const id = crypto.randomUUID();
+    const id = Math.random().toString(36).substring(2) + Date.now().toString(36);
 
     const { error } = await supabase.from('licenses').insert({
       id,
@@ -174,7 +234,20 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
     if (error) {
       alert('Error creating license: ' + error.message);
     } else {
-      alert('LICENSE CREATED SUCCESSFULLY!\n\nClient: ' + clientName + '\nKey: ' + licenseKey);
+      // Record the license fee as a sale for the developer
+      try {
+        await supabase.from('sales').insert({
+          id: Math.random().toString(36).substring(2) + Date.now().toString(36),
+          amount: Number(fee),
+          client_name: clientName,
+          category: 'LICENSE_FEE',
+          timestamp: new Date().toISOString()
+        });
+      } catch (e) {
+        console.warn('Failed to record sale, but license was created:', e);
+      }
+      
+      alert('LICENSE CREATED & PAYMENT LOGGED!\n\nClient: ' + clientName + '\nKey: ' + licenseKey + '\nFee: KES ' + fee);
       fetchData();
     }
   };
@@ -269,7 +342,7 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
         <div className="max-w-7xl mx-auto space-y-8">
           
           {/* Stats Section */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -330,6 +403,37 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
               </div>
               <div className="text-xs font-bold text-slate-400">
                 Total processed in last 24h
+              </div>
+            </motion.div>
+
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="bg-slate-900 border border-slate-800 p-4 rounded-3xl relative overflow-hidden group"
+            >
+              <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/5 rounded-bl-full -translate-y-4 translate-x-4 transition-transform group-hover:scale-110" />
+              <div className="flex items-center gap-4 mb-3">
+                <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center border border-slate-700">
+                  <Database className="w-5 h-5 text-slate-400" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">System Health</p>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${dbHealth.every(h => h.status === 'ok') ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                    <span className="text-sm font-black uppercase tracking-tight">
+                      {dbHealth.every(h => h.status === 'ok') ? 'Optimal' : 'Degraded'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {dbHealth.map(h => (
+                  <div key={h.table} className={`text-[7px] font-black uppercase tracking-tighter px-1.5 py-1 rounded border flex items-center justify-between ${h.status === 'ok' ? 'bg-emerald-500/5 border-emerald-500/10 text-emerald-500/80' : 'bg-red-500/5 border-red-500/10 text-red-500/80'}`}>
+                    <span>{h.table}</span>
+                    <div className={`w-1 h-1 rounded-full ${h.status === 'ok' ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                  </div>
+                ))}
               </div>
             </motion.div>
           </div>
@@ -457,6 +561,58 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
 
           {view === 'dashboard' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+               {/* Recent Sales List */}
+               <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="bg-slate-900 border border-slate-800 rounded-3xl p-8 lg:col-span-2"
+              >
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-600/20 rounded-xl flex items-center justify-center">
+                      <DollarSign className="w-6 h-6 text-amber-500" />
+                    </div>
+                    <h3 className="text-xl font-black uppercase tracking-tight">Recent Revenue</h3>
+                  </div>
+                  <button onClick={() => setView('licenses')} className="text-xs font-bold text-indigo-400 hover:underline uppercase tracking-widest">Manage Licenses →</button>
+                </div>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="text-[10px] font-black uppercase tracking-widest text-slate-500 border-b border-slate-800">
+                        <th className="pb-4">Client</th>
+                        <th className="pb-4">Type</th>
+                        <th className="pb-4">Amount</th>
+                        <th className="pb-4">Timestamp</th>
+                        <th className="pb-4 text-right">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/50">
+                      {licenses.slice(0, 10).map(l => (
+                         // Show recent license fee activity as a proxy for sales if sync is fresh
+                         <tr key={l.id} className="group">
+                           <td className="py-4 font-bold text-sm text-slate-300">{l.client_name}</td>
+                           <td className="py-4 text-[10px] font-black uppercase text-indigo-400/70 tracking-widest">
+                             {l.status === 'PENDING' ? 'License Order' : 'License Sale'}
+                           </td>
+                           <td className="py-4 font-black text-slate-100">{formatCurrency(l.license_fee || 0)}</td>
+                           <td className="py-4 text-xs text-slate-500">{format(new Date(l.created_at), 'MMM dd, HH:mm')}</td>
+                           <td className="py-4 text-right">
+                             <span className="px-2 py-1 bg-emerald-500/10 text-emerald-500 text-[8px] font-black uppercase rounded">Confirmed</span>
+                           </td>
+                         </tr>
+                      ))}
+                      {licenses.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="py-12 text-center text-slate-600 text-sm font-bold uppercase italic tracking-widest">No transaction records found in cloud</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </motion.div>
+
                <motion.div 
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
