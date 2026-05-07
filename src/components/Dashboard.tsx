@@ -1,751 +1,789 @@
-import React, { useState, useEffect } from 'react';
-import { db } from '../services/db';
-import { Sale, Alert, Product, UserProfile, LoginHistory, BusinessProfile } from '../types';
 import { 
-  TrendingUp, 
-  ShoppingBag, 
-  AlertCircle, 
-  CheckCircle2, 
-  Clock, 
-  DollarSign,
-  ArrowUpRight,
-  ArrowDownRight,
-  Package,
-  History,
-  UserCheck,
-  Users,
-  Printer,
-  Download,
-  Trash2
-} from 'lucide-react';
-import { format, startOfDay, isToday, subDays, isSameDay, eachDayOfInterval } from 'date-fns';
-import { 
-  PieChart,
-  Pie,
-  Cell,
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  Legend,
-} from 'recharts';
-import { DeleteConfirmationModal } from './DeleteConfirmationModal';
+  Product, 
+  Sale, 
+  Customer, 
+  Alert, 
+  UserProfile, 
+  LoginHistory,
+  BusinessProfile,
+  Expense,
+  Supplier,
+  Employee,
+  Attendance,
+  Payroll,
+  Debt,
+  LedgerEntry,
+  Variant,
+  Shop
+} from '../types';
+import { get as idbGet, set as idbSet, del as idbDel, keys as idbKeys, createStore } from 'idb-keyval';
 
-interface DashboardProps {
-  user: UserProfile;
-  businessId: string;
-  shopId: string;
-}
+// Create a custom store with a fresh name to avoid "object store not found" errors from previous versions
+const customStore = createStore('dmi-pos-v3', 'keyval');
 
-export const Dashboard: React.FC<DashboardProps> = ({ user, businessId, shopId }) => {
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [expenses, setExpenses] = useState<any[]>([]);
-  const [loginHistory, setLoginHistory] = useState<LoginHistory[]>([]);
-  const [staffDateRange, setStaffDateRange] = useState<'today' | '7days' | '30days' | 'thisMonth'>('7days');
-  const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [alertToDelete, setAlertToDelete] = useState<string | null>(null);
+const STORAGE_KEYS = {
+  PRODUCTS: 'dmi_pos_products',
+  SALES: 'dmi_pos_sales',
+  CUSTOMERS: 'dmi_pos_customers',
+  ALERTS: 'dmi_pos_alerts',
+  USERS: 'dmi_pos_users',
+  LOGIN_HISTORY: 'dmi_pos_login_history',
+  SETTINGS: 'dmi_pos_settings',
+  AUTH: 'dmi_pos_auth_user',
+  BUSINESSES: 'dmi_pos_businesses',
+  SHOPS: 'dmi_pos_shops',
+  ACTIVE_BUSINESS_ID: 'dmi_pos_active_business_id',
+  ACTIVE_SHOP_ID: 'dmi_pos_active_shop_id',
+  EXPENSES: 'dmi_pos_expenses',
+  SUPPLIERS: 'dmi_pos_suppliers',
+  EMPLOYEES: 'dmi_pos_employees',
+  ATTENDANCE: 'dmi_pos_attendance',
+  PAYROLL: 'dmi_pos_payroll',
+  DEBTS: 'dmi_pos_debts',
+  LEDGER: 'dmi_pos_ledger',
+  IS_ACTIVATED: 'dmi_pos_is_activated'
+};
 
-  useEffect(() => {
-    const fetchData = async () => {
-      const [s, a, p, h, b, ex] = await Promise.all([
-        db.getSales(businessId, shopId),
-        db.getAlerts(businessId, shopId),
-        db.getProducts(businessId, shopId),
-        db.getLoginHistory(),
-        db.getBusinessById(businessId),
-        db.getExpenses(businessId, shopId)
-      ]);
-      setSales(s);
-      setAlerts(a);
-      setProducts(p);
-      setLoginHistory(h);
-      setBusinessProfile(b || null);
-      setExpenses(ex);
-    };
-    
-    fetchData();
-    const handleBusinessUpdate = (e: any) => {
-      if (e.detail?.id === businessId) {
-        setBusinessProfile(prev => prev ? { ...prev, ...e.detail.updates } : null);
+const ACTIVATION_PIN = '8124'; // Master activation PIN for the developer to sell the app
+
+// In-memory cache for synchronous access
+const dbCache: Record<string, any> = {};
+
+// Initialize cache from localStorage and IndexedDB
+export const initDb = async () => {
+  // Load all keys from IndexedDB first (source of truth)
+  try {
+    const allKeys = await idbKeys(customStore);
+    for (const key of allKeys) {
+      if (typeof key === 'string' && (key.startsWith('dmi_pos_') || key.startsWith('pos_cart_'))) {
+        dbCache[key] = await idbGet(key, customStore);
       }
-    };
-
-    const handleDataUpdate = (e: any) => {
-      // Keys that should trigger a re-fetch in Dashboard
-      const relevantKeys = [
-        'dmi_pos_sales',
-        'dmi_pos_expenses',
-        'dmi_pos_products',
-        'dmi_pos_alerts',
-        'dmi_pos_businesses'
-      ];
-      if (relevantKeys.includes(e.detail?.key)) {
-        fetchData();
-      }
-    };
-
-    window.addEventListener('business-update', handleBusinessUpdate);
-    window.addEventListener('local-db-update', handleDataUpdate);
-    window.addEventListener('storage-sync', handleDataUpdate);
-    
-    const interval = setInterval(fetchData, 30000); // Polling as backup
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('business-update', handleBusinessUpdate);
-      window.removeEventListener('local-db-update', handleDataUpdate);
-      window.removeEventListener('storage-sync', handleDataUpdate);
-    };
-  }, [businessId, shopId]);
-
-  const formatCurrency = (amount: number | undefined | null) => {
-    const currency = businessProfile?.currency || 'KSh';
-    if (amount === undefined || amount === null) return `${currency}0`;
-    return `${currency}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  };
-
-  const todaySales = sales.filter(s => isToday(new Date(s.timestamp)));
-  const todayExpenses = expenses.filter(e => isToday(new Date(e.date)));
-
-  const totalRevenue = todaySales.reduce((sum, s) => sum + s.total, 0);
-  const totalCOGS = todaySales.reduce((sum, s) => {
-    return sum + s.items.reduce((itemSum, item) => {
-      const buyingPrice = item.buyingPrice || 0;
-      return itemSum + (buyingPrice * item.quantity);
-    }, 0);
-  }, 0);
-
-  const todayGrossProfit = totalRevenue - totalCOGS;
-  const todayExpenseTotal = todayExpenses.reduce((sum, e) => sum + e.amount, 0);
-  const totalNetProfit = todayGrossProfit - todayExpenseTotal;
-  const totalOrders = todaySales.length;
-
-  // Calculate trends based on yesterday
-  const yesterday = subDays(new Date(), 1);
-  const yesterdaySales = sales.filter(s => isSameDay(new Date(s.timestamp), yesterday));
-  const yesterdayExpenses = expenses.filter(e => isSameDay(new Date(e.date), yesterday));
-
-  const yesterdayRevenue = yesterdaySales.reduce((sum, s) => sum + s.total, 0);
-  const yesterdayCOGS = yesterdaySales.reduce((sum, s) => {
-    return sum + s.items.reduce((itemSum, item) => {
-      const buyingPrice = item.buyingPrice || 0;
-      return itemSum + (buyingPrice * item.quantity);
-    }, 0);
-  }, 0);
-
-  const yesterdayGrossProfit = yesterdayRevenue - yesterdayCOGS;
-  const yesterdayExpenseTotal = yesterdayExpenses.reduce((sum, e) => sum + e.amount, 0);
-  const yesterdayNetProfit = yesterdayGrossProfit - yesterdayExpenseTotal;
-  const yesterdayOrders = yesterdaySales.length;
-
-  const calculateTrend = (current: number, previous: number) => {
-    if (previous === 0) return current > 0 ? '+100%' : '0%';
-    const diff = ((current - previous) / previous) * 100;
-    return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}%`;
-  };
-
-  const lowStockCount = products.filter(p => 
-    p.variants.some(v => v.stock <= (v.lowStockThreshold ?? p.lowStockThreshold))
-  ).length;
-  const unreadAlerts = alerts.filter(a => a.status === 'UNREAD');
-
-  const [staffData, setStaffData] = useState<any[]>([]);
-
-  useEffect(() => {
-    const calculateStaffPerformance = async () => {
-      const filteredSalesForStaff = sales.filter(s => {
-        const date = new Date(s.timestamp);
-        if (staffDateRange === 'today') return isToday(date);
-        if (staffDateRange === '7days') return date >= subDays(new Date(), 7);
-        if (staffDateRange === '30days') return date >= subDays(new Date(), 30);
-        if (staffDateRange === 'thisMonth') return date.getMonth() === new Date().getMonth() && date.getFullYear() === new Date().getFullYear();
-        return true;
-      });
-
-      const users = await db.getUsers();
-      const performance = filteredSalesForStaff.reduce((acc, sale) => {
-        const { cashierId, cashierName, total } = sale;
-        if (!acc[cashierId]) {
-          const staffUser = users.find(u => u.uid === cashierId);
-          acc[cashierId] = { name: cashierName, role: staffUser?.role || 'staff', totalSales: 0, transactions: 0 };
-        }
-        acc[cashierId].totalSales += total;
-        acc[cashierId].transactions += 1;
-        return acc;
-      }, {} as Record<string, { name: string, role: string, totalSales: number, transactions: number }>);
-
-      const data = Object.entries(performance).map(([id, d]) => ({
-        id,
-        ...d,
-        avgValue: d.transactions > 0 ? d.totalSales / d.transactions : 0
-      })).sort((a, b) => b.totalSales - a.totalSales);
-
-      setStaffData(data);
-    };
-
-    calculateStaffPerformance();
-  }, [sales, staffDateRange]);
-
-  const markAlertRead = async (id: string) => {
-    await db.updateAlert(id, { status: 'READ' });
-    const freshAlerts = await db.getAlerts(businessId, shopId);
-    setAlerts(freshAlerts);
-  };
-
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleDeleteAlert = (id: string) => {
-    setAlertToDelete(id);
-    setIsDeleteModalOpen(true);
-  };
-
-  const confirmDeleteAlert = async () => {
-    if (alertToDelete) {
-      await db.deleteAlert(alertToDelete);
-      const freshAlerts = await db.getAlerts(businessId, shopId);
-      setAlerts(freshAlerts);
-      setAlertToDelete(null);
-      setIsDeleteModalOpen(false);
     }
-  };
+  } catch (e) {
+    console.error('Failed to load from IndexedDB during init:', e);
+  }
 
-  const handleExportCSV = () => {
-    const headers = ['Date', 'Transaction ID', 'Cashier', 'Payment', 'Total'];
-    const rows = sales.map(s => [
-      format(new Date(s.timestamp), 'yyyy-MM-dd HH:mm'),
-      s.id,
-      s.cashierName,
-      s.paymentMethod,
-      s.total.toString()
-    ]);
+  // Then check localStorage for anything that might be there but not in IDB (unlikely but safe)
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && (key.startsWith('dmi_pos_') || key.startsWith('pos_cart_'))) {
+      if (dbCache[key] === undefined) {
+        const localData = localStorage.getItem(key);
+        if (localData && localData !== '__idb_ref__') {
+          try {
+            dbCache[key] = JSON.parse(localData);
+          } catch (e) {
+            dbCache[key] = null;
+          }
+        }
+      }
+    }
+  }
+};
 
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
+// Sync cache across tabs
+window.addEventListener('storage', async (event) => {
+  if (event.key && (event.key.startsWith('dmi_pos_') || event.key.startsWith('pos_cart_'))) {
+    try {
+      if (event.newValue === '__idb_ref__') {
+        dbCache[event.key] = await idbGet(event.key, customStore);
+      } else if (event.newValue) {
+        try {
+          dbCache[event.key] = JSON.parse(event.newValue);
+        } catch (e) {
+          dbCache[event.key] = null;
+        }
+      } else {
+        delete dbCache[event.key];
+      }
+      window.dispatchEvent(new CustomEvent('storage-sync', { detail: { key: event.key } }));
+    } catch (e) {
+      console.error('Failed to sync from IndexedDB on storage event:', e);
+    }
+  }
+});
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `sales_report_${format(new Date(), 'yyyy-MM-dd')}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+// Helper to get data from localStorage
+export const getLocal = <T>(key: string, defaultValue: T): T => {
+  if (dbCache[key] !== undefined && dbCache[key] !== null) {
+    return dbCache[key] as T;
+  }
+  const data = localStorage.getItem(key);
+  if (data === '__idb_ref__') return defaultValue; // Should have been loaded by initDb
+  return data ? JSON.parse(data) : defaultValue;
+};
 
-  // Prepare chart data for Pie Charts
-  const salesByCategory = todaySales.reduce((acc, sale) => {
-    sale.items.forEach(item => {
-      const category = item.category || 'Uncategorized';
-      acc[category] = (acc[category] || 0) + (item.price * item.quantity);
+// Helper to offload large fields (images) to IndexedDB
+const offloadLargeFields = async (obj: any, key: string): Promise<any> => {
+  if (!obj || typeof obj !== 'object') return obj;
+  
+  if (Array.isArray(obj)) {
+    return Promise.all(obj.map((item, index) => offloadLargeFields(item, key)));
+  }
+
+  const newObj = { ...obj };
+  const largeFields = ['logo', 'imageUrl', 'receiptUrl'];
+  
+  for (const field of largeFields) {
+    if (typeof newObj[field] === 'string' && newObj[field].startsWith('data:image')) {
+      const idbKey = `img_${key}_${newObj.id || Math.random().toString(36).slice(2)}_${field}`;
+      try {
+        await idbSet(idbKey, newObj[field], customStore);
+        newObj[field] = `idb://${idbKey}`;
+      } catch (e) {
+        console.error(`Failed to offload field ${field} to IndexedDB:`, e);
+        // Keep original if offload fails
+      }
+    }
+  }
+
+  // Recursively handle nested objects (like variants or mpesaConfig)
+  for (const k in newObj) {
+    if (k !== 'logo' && k !== 'imageUrl' && k !== 'receiptUrl' && typeof newObj[k] === 'object') {
+      newObj[k] = await offloadLargeFields(newObj[k], key);
+    }
+  }
+
+  return newObj;
+};
+
+// Helper to set data to localStorage with automatic IndexedDB offloading for large fields
+export const setLocal = async <T>(key: string, data: T): Promise<void> => {
+  // Update cache immediately
+  dbCache[key] = data;
+  
+  // Always save to IndexedDB as the primary persistent store
+  try {
+    await idbSet(key, data, customStore);
+  } catch (e) {
+    console.error(`Failed to save ${key} to IndexedDB:`, e);
+  }
+
+  try {
+    const processedData = await offloadLargeFields(data, key);
+    const stringified = JSON.stringify(processedData);
+    
+    // Only save to localStorage if it's reasonably small (under 100KB)
+    if (stringified.length < 100000) {
+      localStorage.setItem(key, stringified);
+    } else {
+      localStorage.setItem(key, '__idb_ref__');
+    }
+  } catch (e: any) {
+    if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+      console.warn('Storage quota exceeded. Using IndexedDB reference for:', key);
+      localStorage.setItem(key, '__idb_ref__');
+      
+      // Aggressive cleanup of other keys if needed
+      const usage: Record<string, number> = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k) usage[k] = (localStorage.getItem(k) || '').length;
+      }
+      console.table(usage);
+
+      const keysToClear = [
+        STORAGE_KEYS.ALERTS,
+        STORAGE_KEYS.LOGIN_HISTORY,
+        STORAGE_KEYS.LEDGER,
+        STORAGE_KEYS.ATTENDANCE,
+        STORAGE_KEYS.EXPENSES
+      ];
+
+      keysToClear.forEach(k => {
+        if (k !== key) {
+          localStorage.setItem(k, '__idb_ref__');
+        }
+      });
+    } else {
+      localStorage.setItem(key, '__idb_ref__');
+    }
+  }
+
+  // Dispatch global sync event for in-tab listeners
+  window.dispatchEvent(new CustomEvent('local-db-update', { detail: { key } }));
+};
+
+// Helper to remove data from both localStorage and IndexedDB
+export const removeLocal = async (key: string): Promise<void> => {
+  delete dbCache[key];
+  localStorage.removeItem(key);
+  try {
+    await idbDel(key, customStore);
+  } catch (e) {
+    console.error(`Failed to delete ${key} from IndexedDB:`, e);
+  }
+  // Dispatch global sync event for in-tab listeners
+  window.dispatchEvent(new CustomEvent('local-db-update', { detail: { key } }));
+};
+
+// Local Database Service
+export const localDb = {
+  // Event Emitter
+  emit: (event: string, detail?: any) => {
+    window.dispatchEvent(new CustomEvent(event, { detail }));
+  },
+
+  // Products
+  getProducts: async (businessId: string, shopId: string): Promise<Product[]> => {
+    const all = getLocal<Product[]>(STORAGE_KEYS.PRODUCTS, []);
+    return all.filter(p => p.businessId === businessId && p.shopId === shopId);
+  },
+  addProduct: async (product: Omit<Product, 'id'>) => {
+    const all = getLocal<Product[]>(STORAGE_KEYS.PRODUCTS, []);
+    const newProduct = { ...product, id: crypto.randomUUID() } as Product;
+    await setLocal(STORAGE_KEYS.PRODUCTS, [...all, newProduct]);
+    return newProduct;
+  },
+  updateProduct: async (id: string, updates: Partial<Product>) => {
+    const all = getLocal<Product[]>(STORAGE_KEYS.PRODUCTS, []);
+    const updated = all.map(p => p.id === id ? { ...p, ...updates } : p);
+    await setLocal(STORAGE_KEYS.PRODUCTS, updated);
+  },
+  deleteProduct: async (id: string) => {
+    const all = getLocal<Product[]>(STORAGE_KEYS.PRODUCTS, []);
+    await setLocal(STORAGE_KEYS.PRODUCTS, all.filter(p => p.id !== id));
+  },
+
+  // Sales
+  getSales: async (businessId: string, shopId?: string): Promise<Sale[]> => {
+    const all = getLocal<Sale[]>(STORAGE_KEYS.SALES, []);
+    return all
+      .filter(s => s.businessId === businessId && (!shopId || s.shopId === shopId))
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  },
+  addSale: async (sale: Omit<Sale, 'id'>) => {
+    const all = getLocal<Sale[]>(STORAGE_KEYS.SALES, []);
+    const business = localDb.getBusinessById(sale.businessId);
+    const taxRate = business?.taxRate || 0;
+    const taxAmount = (sale.total * taxRate) / (100 + taxRate); 
+    
+    const etimsControlNumber = `KRA-${Math.random().toString(36).substring(2, 10).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    const etimsQrCode = `https://etims.kra.go.ke/verify?cu=${etimsControlNumber}&amt=${sale.total}`;
+
+    const newSale = { 
+      ...sale, 
+      id: crypto.randomUUID(),
+      etimsControlNumber,
+      etimsQrCode,
+      taxAmount,
+      taxRate
+    } as Sale;
+    await setLocal(STORAGE_KEYS.SALES, [newSale, ...all]);
+    return newSale;
+  },
+  deleteSale: async (id: string) => {
+    const all = getLocal<Sale[]>(STORAGE_KEYS.SALES, []);
+    await setLocal(STORAGE_KEYS.SALES, all.filter(s => s.id !== id));
+  },
+
+  // Customers
+  getCustomers: async (businessId: string): Promise<Customer[]> => {
+    const all = getLocal<Customer[]>(STORAGE_KEYS.CUSTOMERS, []);
+    return all.filter(c => c.businessId === businessId);
+  },
+  addCustomer: async (customer: Omit<Customer, 'id'>) => {
+    const all = getLocal<Customer[]>(STORAGE_KEYS.CUSTOMERS, []);
+    const newCustomer = { ...customer, id: crypto.randomUUID() } as Customer;
+    await setLocal(STORAGE_KEYS.CUSTOMERS, [...all, newCustomer]);
+    return newCustomer;
+  },
+  updateCustomer: async (id: string, updates: Partial<Customer>) => {
+    const all = getLocal<Customer[]>(STORAGE_KEYS.CUSTOMERS, []);
+    const updated = all.map(c => c.id === id ? { ...c, ...updates } : c);
+    await setLocal(STORAGE_KEYS.CUSTOMERS, updated);
+  },
+  deleteCustomer: async (id: string) => {
+    const all = getLocal<Customer[]>(STORAGE_KEYS.CUSTOMERS, []);
+    await setLocal(STORAGE_KEYS.CUSTOMERS, all.filter(c => c.id !== id));
+  },
+
+  // Alerts
+  getAlerts: (businessId: string, shopId: string): Alert[] => {
+    const all = getLocal<Alert[]>(STORAGE_KEYS.ALERTS, []);
+    return all.filter(a => a.businessId === businessId && a.shopId === shopId);
+  },
+  addAlert: async (alert: Omit<Alert, 'id'>) => {
+    const all = getLocal<Alert[]>(STORAGE_KEYS.ALERTS, []);
+    const newAlert = { ...alert, id: crypto.randomUUID() } as Alert;
+    await setLocal(STORAGE_KEYS.ALERTS, [newAlert, ...all]);
+    return newAlert;
+  },
+  updateAlert: async (id: string, updates: Partial<Alert>) => {
+    const all = getLocal<Alert[]>(STORAGE_KEYS.ALERTS, []);
+    const updated = all.map(a => a.id === id ? { ...a, ...updates } : a);
+    await setLocal(STORAGE_KEYS.ALERTS, updated);
+  },
+  deleteAlert: async (id: string) => {
+    const all = getLocal<Alert[]>(STORAGE_KEYS.ALERTS, []);
+    await setLocal(STORAGE_KEYS.ALERTS, all.filter(a => a.id !== id));
+  },
+
+  // Users
+  getUsers: (): UserProfile[] => getLocal<UserProfile[]>(STORAGE_KEYS.USERS, []),
+  addUser: async (user: Omit<UserProfile, 'uid'>) => {
+    const users = localDb.getUsers();
+    const newUser = { ...user, uid: crypto.randomUUID() };
+    await setLocal(STORAGE_KEYS.USERS, [...users, newUser]);
+    return newUser;
+  },
+  updateUser: async (uid: string, updates: Partial<UserProfile>) => {
+    const users = localDb.getUsers();
+    const updated = users.map(u => u.uid === uid ? { ...u, ...updates } : u);
+    await setLocal(STORAGE_KEYS.USERS, updated);
+  },
+
+  // Login History
+  getLoginHistory: (): LoginHistory[] => getLocal<LoginHistory[]>(STORAGE_KEYS.LOGIN_HISTORY, []),
+  addLoginHistory: async (history: Omit<LoginHistory, 'id'>) => {
+    const all = localDb.getLoginHistory();
+    const newHistory = { ...history, id: crypto.randomUUID() };
+    await setLocal(STORAGE_KEYS.LOGIN_HISTORY, [newHistory, ...all].slice(0, 100)); 
+    return newHistory;
+  },
+
+  // Business Profiles
+  getBusinesses: (): BusinessProfile[] => getLocal<BusinessProfile[]>(STORAGE_KEYS.BUSINESSES, []),
+  addBusiness: async (business: Omit<BusinessProfile, 'id'>) => {
+    const businesses = localDb.getBusinesses();
+    const newBusiness = { ...business, id: crypto.randomUUID() };
+    await setLocal(STORAGE_KEYS.BUSINESSES, [...businesses, newBusiness]);
+    return newBusiness;
+  },
+  updateBusiness: async (id: string, updates: Partial<BusinessProfile>) => {
+    const businesses = localDb.getBusinesses();
+    const updated = businesses.map(b => b.id === id ? { ...b, ...updates } : b);
+    await setLocal(STORAGE_KEYS.BUSINESSES, updated);
+    localDb.emit('business-update', { id, updates });
+  },
+  getBusinessById: (id: string): BusinessProfile | undefined => {
+    return localDb.getBusinesses().find(b => b.id === id);
+  },
+  deleteBusiness: async (id: string) => {
+    const businesses = localDb.getBusinesses();
+    await setLocal(STORAGE_KEYS.BUSINESSES, businesses.filter(b => b.id !== id));
+
+    const shops = getLocal<Shop[]>(STORAGE_KEYS.SHOPS, []);
+    await setLocal(STORAGE_KEYS.SHOPS, shops.filter(s => s.businessId !== id));
+
+    const products = getLocal<Product[]>(STORAGE_KEYS.PRODUCTS, []);
+    await setLocal(STORAGE_KEYS.PRODUCTS, products.filter(p => p.businessId !== id));
+
+    const sales = getLocal<Sale[]>(STORAGE_KEYS.SALES, []);
+    await setLocal(STORAGE_KEYS.SALES, sales.filter(s => s.businessId !== id));
+
+    const customers = getLocal<Customer[]>(STORAGE_KEYS.CUSTOMERS, []);
+    await setLocal(STORAGE_KEYS.CUSTOMERS, customers.filter(c => c.businessId !== id));
+
+    const alerts = getLocal<Alert[]>(STORAGE_KEYS.ALERTS, []);
+    await setLocal(STORAGE_KEYS.ALERTS, alerts.filter(a => a.businessId !== id));
+
+    if (localDb.getActiveBusinessId() === id) {
+      localDb.setActiveBusinessId(null);
+      localDb.setActiveShopId(null);
+    }
+  },
+
+  // Shops
+  getShops: (businessId: string): Shop[] => {
+    const all = getLocal<Shop[]>(STORAGE_KEYS.SHOPS, []);
+    return all.filter(s => s.businessId === businessId);
+  },
+  addShop: async (shop: Omit<Shop, 'id'>) => {
+    const all = getLocal<Shop[]>(STORAGE_KEYS.SHOPS, []);
+    const newShop = { ...shop, id: crypto.randomUUID() };
+    await setLocal(STORAGE_KEYS.SHOPS, [...all, newShop]);
+    return newShop;
+  },
+  updateShop: async (id: string, updates: Partial<Shop>) => {
+    const all = getLocal<Shop[]>(STORAGE_KEYS.SHOPS, []);
+    const updated = all.map(s => s.id === id ? { ...s, ...updates } : s);
+    await setLocal(STORAGE_KEYS.SHOPS, updated);
+  },
+  getShopById: (id: string): Shop | undefined => {
+    const all = getLocal<Shop[]>(STORAGE_KEYS.SHOPS, []);
+    return all.find(s => s.id === id);
+  },
+
+  // Expenses
+  getExpenses: (businessId: string, shopId?: string): Expense[] => {
+    const all = getLocal<Expense[]>(STORAGE_KEYS.EXPENSES, []);
+    return all.filter(e => e.businessId === businessId && (!shopId || e.shopId === shopId));
+  },
+  addExpense: async (expense: Omit<Expense, 'id'>) => {
+    const all = getLocal<Expense[]>(STORAGE_KEYS.EXPENSES, []);
+    const newExpense = { ...expense, id: crypto.randomUUID() } as Expense;
+    await setLocal(STORAGE_KEYS.EXPENSES, [newExpense, ...all]);
+    return newExpense;
+  },
+  deleteExpense: async (id: string) => {
+    const all = getLocal<Expense[]>(STORAGE_KEYS.EXPENSES, []);
+    await setLocal(STORAGE_KEYS.EXPENSES, all.filter(e => e.id !== id));
+  },
+
+  // Suppliers
+  getSuppliers: (businessId: string): Supplier[] => {
+    const all = getLocal<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
+    return all.filter(s => s.businessId === businessId);
+  },
+  addSupplier: async (supplier: Omit<Supplier, 'id'>) => {
+    const all = getLocal<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
+    const newSupplier = { ...supplier, id: crypto.randomUUID() } as Supplier;
+    await setLocal(STORAGE_KEYS.SUPPLIERS, [...all, newSupplier]);
+    return newSupplier;
+  },
+  updateSupplier: async (id: string, updates: Partial<Supplier>) => {
+    const all = getLocal<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
+    const updated = all.map(s => s.id === id ? { ...s, ...updates } : s);
+    await setLocal(STORAGE_KEYS.SUPPLIERS, updated);
+  },
+  deleteSupplier: async (id: string) => {
+    const all = getLocal<Supplier[]>(STORAGE_KEYS.SUPPLIERS, []);
+    await setLocal(STORAGE_KEYS.SUPPLIERS, all.filter(s => s.id !== id));
+  },
+
+  // Employees
+  getEmployees: (businessId: string, shopId?: string): Employee[] => {
+    const all = getLocal<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
+    return all.filter(e => e.businessId === businessId && (!shopId || e.shopId === shopId));
+  },
+  addEmployee: async (employee: Omit<Employee, 'id'>) => {
+    const all = getLocal<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
+    const newEmployee = { ...employee, id: crypto.randomUUID() } as Employee;
+    await setLocal(STORAGE_KEYS.EMPLOYEES, [...all, newEmployee]);
+    return newEmployee;
+  },
+  updateEmployee: async (id: string, updates: Partial<Employee>) => {
+    const all = getLocal<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
+    const updated = all.map(e => e.id === id ? { ...e, ...updates } : e);
+    await setLocal(STORAGE_KEYS.EMPLOYEES, updated);
+  },
+  deleteEmployee: async (id: string) => {
+    const all = getLocal<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
+    await setLocal(STORAGE_KEYS.EMPLOYEES, all.filter(e => e.id !== id));
+  },
+
+  // Attendance
+  getAttendance: (employeeId: string): Attendance[] => {
+    const all = getLocal<Attendance[]>(STORAGE_KEYS.ATTENDANCE, []);
+    return all.filter(a => a.employeeId === employeeId);
+  },
+  getAllAttendance: (): Attendance[] => {
+    return getLocal<Attendance[]>(STORAGE_KEYS.ATTENDANCE, []);
+  },
+  addAttendance: async (attendance: Omit<Attendance, 'id'>) => {
+    const all = getLocal<Attendance[]>(STORAGE_KEYS.ATTENDANCE, []);
+    const newAttendance = { ...attendance, id: crypto.randomUUID() } as Attendance;
+    await setLocal(STORAGE_KEYS.ATTENDANCE, [newAttendance, ...all]);
+    return newAttendance;
+  },
+  deleteAttendance: async (id: string) => {
+    const all = getLocal<Attendance[]>(STORAGE_KEYS.ATTENDANCE, []);
+    await setLocal(STORAGE_KEYS.ATTENDANCE, all.filter(a => a.id !== id));
+  },
+
+  // Payroll
+  getPayroll: (employeeId: string): Payroll[] => {
+    const all = getLocal<Payroll[]>(STORAGE_KEYS.PAYROLL, []);
+    return all.filter(p => p.employeeId === employeeId);
+  },
+  addPayroll: async (payroll: Omit<Payroll, 'id'>) => {
+    const all = getLocal<Payroll[]>(STORAGE_KEYS.PAYROLL, []);
+    const newPayroll = { ...payroll, id: crypto.randomUUID() } as Payroll;
+    await setLocal(STORAGE_KEYS.PAYROLL, [newPayroll, ...all]);
+    return newPayroll;
+  },
+  getPayrollReport: (businessId: string, startDate: Date, endDate: Date, shopId?: string) => {
+    const allPayroll = getLocal<Payroll[]>(STORAGE_KEYS.PAYROLL, []);
+    const employees = localDb.getEmployees(businessId, shopId);
+    const employeeIds = new Set(employees.map(e => e.id));
+
+    return allPayroll.filter(p => {
+      if (!employeeIds.has(p.employeeId)) return false;
+      const date = new Date(p.paymentDate);
+      return date >= startDate && date <= endDate;
     });
-    return acc;
-  }, {} as Record<string, number>);
+  },
+  deletePayroll: async (id: string) => {
+    const all = getLocal<Payroll[]>(STORAGE_KEYS.PAYROLL, []);
+    await setLocal(STORAGE_KEYS.PAYROLL, all.filter(p => p.id !== id));
+  },
 
-  const categoryPieData = Object.entries(salesByCategory).map(([name, value]) => ({ name, value }));
+  // Debts
+  getDebts: (customerId: string): Debt[] => {
+    const all = getLocal<Debt[]>(STORAGE_KEYS.DEBTS, []);
+    return all.filter(d => d.customerId === customerId);
+  },
+  getAllDebts: (businessId: string, shopId?: string): Debt[] => {
+    const all = getLocal<Debt[]>(STORAGE_KEYS.DEBTS, []);
+    return all.filter(d => d.businessId === businessId && (!shopId || d.shopId === shopId));
+  },
+  addDebt: async (debt: Omit<Debt, 'id'>) => {
+    const all = getLocal<Debt[]>(STORAGE_KEYS.DEBTS, []);
+    const newDebt = { ...debt, id: crypto.randomUUID() } as Debt;
+    await setLocal(STORAGE_KEYS.DEBTS, [newDebt, ...all]);
+    return newDebt;
+  },
+  updateDebt: async (id: string, updates: Partial<Debt>) => {
+    const all = getLocal<Debt[]>(STORAGE_KEYS.DEBTS, []);
+    const updated = all.map(d => d.id === id ? { ...d, ...updates } : d);
+    await setLocal(STORAGE_KEYS.DEBTS, updated);
+  },
+  payDebt: async (debtId: string, amount: number, cashierId: string, cashierName: string) => {
+    const allDebts = getLocal<Debt[]>(STORAGE_KEYS.DEBTS, []);
+    const debt = allDebts.find(d => d.id === debtId);
+    if (!debt) throw new Error('Debt not found');
 
-  // Weekly Sales Data
-  const last7Days = eachDayOfInterval({
-    start: subDays(new Date(), 6),
-    end: new Date()
-  });
+    const customer = (await localDb.getCustomers(debt.businessId)).find(c => c.id === debt.customerId);
+    if (!customer) throw new Error('Customer not found');
 
-  const weeklySalesData = last7Days.map(day => {
-    const daySales = sales.filter(s => isSameDay(new Date(s.timestamp), day));
-    return {
-      name: format(day, 'EEE'),
-      value: daySales.reduce((sum, s) => sum + s.total, 0),
+    // 1. Update debt
+    const updatedDebts = allDebts.map(d => d.id === debtId ? { ...d, remainingAmount: 0, status: 'PAID' as const } : d);
+    await setLocal(STORAGE_KEYS.DEBTS, updatedDebts);
+
+    // 2. Create a generic Sale for the payment representation (so it shows in recent transactions)
+    // IMPORTANT: We use a special category "DEBT_PAYMENT" to distinguish it if needed
+    const sale: Omit<Sale, 'id'> = {
+      businessId: debt.businessId,
+      shopId: debt.shopId,
+      items: [{
+        productId: 'DEBT_PAYMENT',
+        variantId: 'DEBT_PAYMENT',
+        name: 'Debt Payment',
+        variantName: `For Order #${debt.saleId.slice(-8).toUpperCase()}`,
+        quantity: 1,
+        price: amount,
+        originalPrice: amount,
+        buyingPrice: 0,
+        unit: 'payment'
+      }],
+      total: amount,
+      timestamp: new Date().toISOString(),
+      cashierId,
+      cashierName,
+      customerId: debt.customerId,
+      customerName: customer.name,
+      paymentMethod: 'CASH', // Payment received in cash
     };
-  });
+    const newSale = await localDb.addSale(sale);
 
-  const COLORS = [
-    'var(--primary-color)',
-    'var(--secondary-color)',
-    'var(--accent-color)',
-    '#f59e0b',
-    '#ef4444',
-    '#3b82f6',
-    '#8b5cf6',
-    '#ec4899'
-  ];
+    // 3. Add Ledger Entry (CREDIT)
+    const currentLedger = localDb.getLedger(debt.customerId, 'CUSTOMER');
+    const lastBalance = currentLedger.length > 0 ? currentLedger[currentLedger.length - 1].balanceAfter : 0;
+    
+    await localDb.addLedgerEntry({
+      businessId: debt.businessId,
+      shopId: debt.shopId,
+      entityId: debt.customerId,
+      entityType: 'CUSTOMER',
+      type: 'CREDIT',
+      amount: amount,
+      balanceAfter: lastBalance - amount,
+      description: `Debt settlement for order #${debt.saleId.slice(-8).toUpperCase()}`,
+      referenceId: newSale.id,
+      timestamp: new Date().toISOString()
+    });
 
-  const stats = [
-    { label: "Today's Revenue", value: formatCurrency(totalRevenue), icon: DollarSign, color: 'bg-primary', trend: calculateTrend(totalRevenue, yesterdayRevenue) },
-    { label: "Today's Net Profit", value: formatCurrency(totalNetProfit), icon: TrendingUp, color: 'bg-accent', trend: calculateTrend(totalNetProfit, yesterdayNetProfit) },
-    { label: "Today's Orders", value: totalOrders, icon: ShoppingBag, color: 'bg-secondary', trend: calculateTrend(totalOrders, yesterdayOrders) },
-    { label: "Low Stock Items", value: lowStockCount, icon: Package, color: 'bg-accent', trend: lowStockCount > 0 ? 'Critical' : 'Good' },
-  ];
+    return newSale;
+  },
 
-  return (
-    <div className="space-y-8">
-      <div className="hidden print:block mb-8">
-        <h1 className="text-2xl font-bold">{businessProfile?.name || 'Business'} - Business Overview Report</h1>
-        <p className="text-gray-500">Generated on: {format(new Date(), 'MMMM do, yyyy HH:mm')}</p>
-        <hr className="mt-4 border-border" />
-      </div>
+  // Ledger
+  getLedger: (entityId: string, entityType: 'CUSTOMER' | 'SUPPLIER'): LedgerEntry[] => {
+    const all = getLocal<LedgerEntry[]>(STORAGE_KEYS.LEDGER, []);
+    return all.filter(l => l.entityId === entityId && l.entityType === entityType);
+  },
+  addLedgerEntry: async (entry: Omit<LedgerEntry, 'id'>) => {
+    const all = getLocal<LedgerEntry[]>(STORAGE_KEYS.LEDGER, []);
+    const newEntry = { ...entry, id: crypto.randomUUID() } as LedgerEntry;
+    await setLocal(STORAGE_KEYS.LEDGER, [newEntry, ...all]);
+    return newEntry;
+  },
+  deleteLedgerEntry: async (id: string) => {
+    const all = getLocal<LedgerEntry[]>(STORAGE_KEYS.LEDGER, []);
+    await setLocal(STORAGE_KEYS.LEDGER, all.filter(l => l.id !== id));
+  },
 
-      <div className="flex items-center justify-between mb-6 print:hidden">
-        <div>
-          <h2 className="text-2xl font-bold text-ink">Welcome to DMi Technologies</h2>
-          <p className="text-sm text-muted">Welcome back, {user.name}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={handlePrint}
-            className="flex items-center gap-2 px-6 py-2.5 bg-card border border-border hover:bg-muted text-ink font-bold rounded-xl transition-all shadow-sm"
-          >
-            <Printer className="w-4 h-4" />
-            Print Report
-          </button>
-          <button 
-            onClick={handleExportCSV}
-            className="flex items-center gap-2 px-6 py-2.5 bg-black text-white hover:bg-black/90 font-bold rounded-xl transition-all shadow-lg"
-          >
-            <Download className="w-4 h-4" />
-            Export CSV
-          </button>
-        </div>
-      </div>
+  // Active State
+  getActiveBusinessId: (): string | null => localStorage.getItem(STORAGE_KEYS.ACTIVE_BUSINESS_ID),
+  setActiveBusinessId: (id: string | null) => {
+    if (id) localStorage.setItem(STORAGE_KEYS.ACTIVE_BUSINESS_ID, id);
+    else localStorage.removeItem(STORAGE_KEYS.ACTIVE_BUSINESS_ID);
+  },
+  getActiveShopId: (): string | null => localStorage.getItem(STORAGE_KEYS.ACTIVE_SHOP_ID),
+  setActiveShopId: (id: string | null) => {
+    if (id) localStorage.setItem(STORAGE_KEYS.ACTIVE_SHOP_ID, id);
+    else localStorage.removeItem(STORAGE_KEYS.ACTIVE_SHOP_ID);
+  },
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, idx) => (
-          <div key={idx} className="bg-card p-6 rounded-3xl border border-border shadow-sm hover:shadow-md transition-all">
-            <div className="flex items-start justify-between mb-4">
-              <div className={`p-3 rounded-2xl ${stat.color} text-white shadow-lg`}>
-                <stat.icon className="w-6 h-6" />
-              </div>
-              <span className={`text-xs font-bold px-2 py-1 rounded-lg ${
-                stat.trend.startsWith('+') ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
-              }`}>
-                {stat.trend}
-              </span>
-            </div>
-            <p className="text-muted text-sm font-medium">{stat.label}</p>
-            <h3 className="text-2xl font-bold text-ink mt-1">{stat.value}</h3>
-          </div>
-        ))}
-      </div>
+  // Reporting Helpers
+  getSalesReport: (businessId: string, startDate: Date, endDate: Date, shopId?: string) => {
+    const sales = getLocal<Sale[]>(STORAGE_KEYS.SALES, []);
+    const filtered = sales.filter(s => s.businessId === businessId && (!shopId || s.shopId === shopId));
+    return filtered
+      .filter(s => {
+        const date = new Date(s.timestamp);
+        return date >= startDate && date <= endDate;
+      })
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  },
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Sales Chart */}
-        <div className="lg:col-span-2 bg-card p-8 rounded-3xl border border-border shadow-sm">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h3 className="text-lg font-bold text-ink">Sales by Category</h3>
-              <p className="text-sm text-muted">Revenue distribution for today</p>
-            </div>
-            <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 px-3 py-1.5 rounded-full">
-              <Clock className="w-3 h-3" />
-              TODAY
-            </div>
-          </div>
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={categoryPieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {categoryPieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ backgroundColor: 'var(--card)', border: '1px solid var(--border)', borderRadius: '12px', color: 'var(--ink)' }}
-                  formatter={(value: number) => [formatCurrency(value), 'Revenue']}
-                />
-                <Legend verticalAlign="bottom" height={36}/>
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+  getSalesByCustomer: (customerId: string): Sale[] => {
+    const all = getLocal<Sale[]>(STORAGE_KEYS.SALES, []);
+    return all.filter(s => s.customerId === customerId);
+  },
 
-        {/* Recent Alerts */}
-        <div className="bg-card p-8 rounded-3xl border border-border shadow-sm flex flex-col">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-bold text-ink">Recent Alerts</h3>
-            <span className="text-xs font-bold text-muted uppercase tracking-wider">Latest 50</span>
-          </div>
-            <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-            {alerts.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-muted gap-3 py-12">
-                <div className="w-16 h-16 bg-bg rounded-full flex items-center justify-center">
-                  <CheckCircle2 className="w-8 h-8 opacity-20" />
-                </div>
-                <div className="text-center">
-                  <p className="text-sm font-bold text-ink">All systems clear</p>
-                  <p className="text-xs text-muted">No active stock or price alerts</p>
-                </div>
-              </div>
-            ) : (
-              alerts.map(alert => (
-                <div 
-                  key={alert.id} 
-                  className={`p-4 rounded-2xl border transition-all ${
-                    alert.status === 'UNREAD' 
-                      ? 'bg-rose-500/10 border-rose-500/20' 
-                      : 'bg-bg border-border opacity-60'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className={`p-2 rounded-xl ${
-                      alert.type === 'PRICE_OVERRIDE' ? 'bg-amber-500/20 text-amber-500' : 'bg-rose-500/20 text-rose-500'
-                    }`}>
-                      <AlertCircle className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-xs font-bold text-ink">{alert.type.replace('_', ' ')}</p>
-                        <button 
-                          onClick={() => handleDeleteAlert(alert.id)}
-                          className="p-1 text-muted hover:text-rose-500 transition-colors"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                      <p className="text-xs text-muted leading-relaxed">{alert.message}</p>
-                      <div className="flex items-center justify-between mt-3">
-                        <span className="text-[10px] text-muted font-medium">
-                          {format(new Date(alert.timestamp), 'MMM d, HH:mm')}
-                        </span>
-                        {alert.status === 'UNREAD' && (
-                          <button 
-                            onClick={() => markAlertRead(alert.id)}
-                            className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
-                          >
-                            Mark as read
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
+  getStaffPerformance: (businessId: string, startDate: Date, endDate: Date, shopId?: string) => {
+    const sales = localDb.getSalesReport(businessId, startDate, endDate, shopId);
+    const users = localDb.getUsers();
+    const performance: Record<string, { 
+      name: string, 
+      role: string,
+      totalSales: number, 
+      transactionCount: number, 
+      avgTransactionValue: number 
+    }> = {};
 
-      {/* Weekly Analytics Chart */}
-      <div className="bg-card p-8 rounded-3xl border border-border shadow-sm">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h3 className="text-lg font-bold text-ink">Weekly Revenue Distribution</h3>
-            <p className="text-sm text-muted">Revenue share for the past 7 days</p>
-          </div>
-        </div>
-        <div className="h-[350px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={weeklySalesData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                outerRadius={120}
-                fill="#8884d8"
-                dataKey="value"
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-              >
-                {weeklySalesData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: 'var(--card)', 
-                  border: '1px solid var(--border)', 
-                  borderRadius: '16px', 
-                  color: 'var(--ink)',
-                  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
-                }}
-                formatter={(value: number) => [formatCurrency(value), 'Revenue']}
-              />
-              <Legend verticalAlign="bottom" height={36}/>
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+    sales.forEach(sale => {
+      if (!performance[sale.cashierId]) {
+        const user = users.find(u => u.uid === sale.cashierId);
+        performance[sale.cashierId] = {
+          name: sale.cashierName,
+          role: user?.role || 'staff',
+          totalSales: 0,
+          transactionCount: 0,
+          avgTransactionValue: 0
+        };
+      }
+      performance[sale.cashierId].totalSales += sale.total;
+      performance[sale.cashierId].transactionCount += 1;
+    });
 
-      {/* Recent Transactions */}
-      <div className="bg-card border border-border rounded-3xl overflow-hidden shadow-sm">
-        <div className="px-8 py-6 border-b border-border flex items-center justify-between">
-          <h3 className="text-lg font-bold text-ink">Recent Transactions</h3>
-          <button className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">View All</button>
-        </div>
-        <div className="overflow-x-auto">
-          {todaySales.length === 0 ? (
-            <div className="py-20 flex flex-col items-center justify-center text-muted gap-4">
-              <div className="w-20 h-20 bg-bg rounded-full flex items-center justify-center">
-                <ShoppingBag className="w-10 h-10 opacity-20" />
-              </div>
-              <div className="text-center">
-                <p className="text-base font-bold text-ink">No transactions today</p>
-                <p className="text-sm text-muted">Sales will appear here as they happen</p>
-              </div>
-            </div>
-          ) : (
-            <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-bg text-xs font-bold text-muted uppercase tracking-wider">
-                <th className="px-8 py-4">Order ID</th>
-                <th className="px-8 py-4">Cashier</th>
-                <th className="px-8 py-4">Items</th>
-                <th className="px-8 py-4">Total</th>
-                <th className="px-8 py-4">Time</th>
-                <th className="px-8 py-4 text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {sales.slice(0, 5).map(sale => (
-                <tr key={sale.id} className="hover:bg-bg transition-colors">
-                  <td className="px-8 py-4 font-mono text-xs text-muted">#{sale.id.slice(-8).toUpperCase()}</td>
-                  <td className="px-8 py-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-indigo-500/10 flex items-center justify-center text-[10px] font-bold text-indigo-600">
-                        {(sale.cashierName || 'S').charAt(0)}
-                      </div>
-                      <span className="text-sm font-medium text-ink">{sale.cashierName || 'Staff'}</span>
-                    </div>
-                  </td>
-                  <td className="px-8 py-4 text-sm text-muted">{sale.items.length} items</td>
-                  <td className="px-8 py-4 font-bold text-ink">{formatCurrency(sale.total)}</td>
-                  <td className="px-8 py-4 text-xs text-muted">{format(new Date(sale.timestamp), 'HH:mm')}</td>
-                  <td className="px-8 py-4 text-right">
-                    <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold rounded-full">COMPLETED</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          )}
-        </div>
-      </div>
-      {/* Staff Performance Section */}
-      {user.role === 'admin' && (
-        <div className="bg-card p-8 rounded-3xl border border-border shadow-sm">
-          <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl">
-                <Users className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-ink">Staff Performance</h3>
-                <p className="text-sm text-muted">Sales metrics by individual staff members</p>
-              </div>
-            </div>
-            <div className="flex bg-muted p-1 rounded-xl">
-              {(['today', '7days', '30days', 'thisMonth'] as const).map((range) => (
-                <button
-                  key={range}
-                  onClick={() => setStaffDateRange(range)}
-                  className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                    staffDateRange === range 
-                      ? 'bg-card text-indigo-600 dark:text-indigo-400 shadow-sm' 
-                      : 'text-muted hover:text-ink'
-                  }`}
-                >
-                  {range === 'today' ? 'Today' : range === '7days' ? 'Last 7 Days' : range === '30days' ? 'Last 30 Days' : 'Monthly'}
-                </button>
-              ))}
-            </div>
-          </div>
+    Object.values(performance).forEach(p => {
+      p.avgTransactionValue = p.totalSales / p.transactionCount;
+    });
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
-            <div className="lg:col-span-2 bg-bg border border-border rounded-2xl p-6">
-              <h4 className="text-sm font-bold text-ink uppercase tracking-wider mb-6">Revenue Distribution by Staff</h4>
-              <div className="h-[300px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={staffData.map(s => ({ name: s.name, value: s.totalSales }))}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {staffData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: 'var(--card)', border: '1px solid var(--border)', borderRadius: '12px', color: 'var(--ink)' }}
-                      formatter={(value: number) => [formatCurrency(value), 'Revenue']}
-                    />
-                    <Legend verticalAlign="bottom" height={36}/>
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+    return Object.values(performance);
+  },
 
-            <div className="bg-bg border border-border rounded-2xl p-6 flex flex-col justify-center text-center">
-              <div className="w-16 h-16 bg-accent/10 text-accent rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <TrendingUp className="w-8 h-8" />
-              </div>
-              <h4 className="text-sm font-bold text-muted uppercase tracking-widest mb-2">Top Performer</h4>
-              {staffData.length > 0 ? (
-                <>
-                  <p className="text-2xl font-black text-ink mb-1">{staffData[0].name || 'Top Staff'}</p>
-                  <p className="text-accent font-bold">{formatCurrency(staffData[0].totalSales)}</p>
-                  <div className="mt-6 pt-6 border-t border-border">
-                    <p className="text-[10px] font-bold text-muted uppercase mb-1">Efficiency</p>
-                    <p className="text-xl font-bold text-ink">
-                      {((staffData[0].totalSales / (totalRevenue || 1)) * 100).toFixed(1)}%
-                    </p>
-                    <p className="text-xs text-muted mt-1">of total revenue</p>
-                  </div>
-                </>
-              ) : (
-                <p className="text-muted italic">No data available</p>
-              )}
-            </div>
-          </div>
+  getProfitLossReport: (businessId: string, startDate: Date, endDate: Date, shopId?: string) => {
+    const sales = localDb.getSalesReport(businessId, startDate, endDate, shopId);
+    const expenses = localDb.getExpenses(businessId, shopId).filter(e => {
+      const date = new Date(e.date);
+      return date >= startDate && date <= endDate;
+    });
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {staffData.length === 0 ? (
-              <div className="col-span-full py-12 text-center text-muted italic text-sm">
-                No sales data found for this period
-              </div>
-            ) : (
-              staffData.map((staff) => (
-                <div key={staff.id} className="p-6 bg-bg border border-border rounded-2xl hover:border-primary/30 transition-all group">
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-lg font-bold text-primary">
-                      {(staff.name || 'S').charAt(0)}
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-ink">{staff.name || 'Staff'}</h4>
-                      <p className={`text-[10px] font-bold uppercase ${
-                  staff.role === 'admin' ? 'text-primary' : 'text-muted'
-                }`}>{staff.role === 'admin' ? 'Admin' : 'Staff'}</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="text-center">
-                      <p className="text-[10px] font-bold text-muted uppercase mb-1">Sales</p>
-                      <p className="text-sm font-bold text-ink">{formatCurrency(staff.totalSales)}</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[10px] font-bold text-muted uppercase mb-1">Orders</p>
-                      <p className="text-sm font-bold text-ink">{staff.transactions}</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[10px] font-bold text-muted uppercase mb-1">Avg. Value</p>
-                      <p className="text-sm font-bold text-ink">{formatCurrency(staff.avgValue)}</p>
-                    </div>
-                  </div>
-                  <div className="mt-6 h-1 w-full bg-muted rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-primary transition-all duration-1000" 
-                      style={{ width: `${Math.min(100, (staff.totalSales / (totalRevenue || 1)) * 100)}%` }}
-                    />
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
+    let totalRevenue = 0;
+    let totalCost = 0;
+    let totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
 
-      {/* Login History */}
-      <DeleteConfirmationModal
-        isOpen={isDeleteModalOpen}
-        onClose={() => {
-          setIsDeleteModalOpen(false);
-          setAlertToDelete(null);
-        }}
-        onConfirm={confirmDeleteAlert}
-        title="Clear Alert"
-        message="Are you sure you want to clear this alert?"
-      />
-      {user.role === 'admin' && (
-        <div className="bg-card p-8 rounded-3xl border border-border shadow-sm">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl">
-                <History className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-ink">User Login History</h3>
-                <p className="text-sm text-muted">Monitor staff and admin access</p>
-              </div>
-            </div>
-            <button className="text-indigo-600 dark:text-indigo-400 text-sm font-bold hover:underline print:hidden">View All</button>
-          </div>
-          
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left border-b border-border">
-                  <th className="pb-4 text-xs font-bold text-muted uppercase tracking-wider">User</th>
-                  <th className="pb-4 text-xs font-bold text-muted uppercase tracking-wider">Role</th>
-                  <th className="pb-4 text-xs font-bold text-muted uppercase tracking-wider">Device/Browser</th>
-                  <th className="pb-4 text-xs font-bold text-muted uppercase tracking-wider">Login Time</th>
-                  <th className="pb-4 text-xs font-bold text-muted uppercase tracking-wider">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {loginHistory.slice(0, 10).map((history) => (
-                  <tr key={history.id} className="group hover:bg-bg transition-colors">
-                    <td className="py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-bg rounded-full flex items-center justify-center text-xs font-bold text-muted">
-                          {(history.userName || 'U').charAt(0)}
-                        </div>
-                        <span className="text-sm font-semibold text-ink">{history.userName || 'User'}</span>
-                      </div>
-                    </td>
-                    <td className="py-4">
-                      <span className={`text-[10px] px-2 py-1 rounded-lg font-bold uppercase ${
-                        history.role === 'admin' ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' : 'bg-bg text-muted'
-                      }`}>
-                        {history.role === 'admin' ? 'Admin' : 'Staff'}
-                      </span>
-                    </td>
-                    <td className="py-4">
-                      <div className="flex flex-col">
-                        <span className="text-xs text-ink font-medium">{history.device}</span>
-                        <span className="text-[10px] text-muted">{history.browser} • {history.ipAddress}</span>
-                      </div>
-                    </td>
-                    <td className="py-4">
-                      <span className="text-sm text-muted">{format(new Date(history.timestamp), 'MMM d, HH:mm')}</span>
-                    </td>
-                    <td className="py-4">
-                      <div className={`flex items-center gap-2 ${history.status === 'SUCCESS' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                        {history.status === 'SUCCESS' ? <UserCheck className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-                        <span className="text-xs font-bold">{history.status}</span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {loginHistory.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="py-8 text-center text-muted text-sm italic">
-                      No login history records found
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+    sales.forEach(sale => {
+      totalRevenue += sale.total;
+      sale.items.forEach(item => {
+        totalCost += (item.buyingPrice || 0) * item.quantity;
+      });
+    });
+
+    return {
+      totalRevenue,
+      totalCost,
+      totalExpenses,
+      grossProfit: totalRevenue - totalCost,
+      netProfit: totalRevenue - totalCost - totalExpenses
+    };
+  },
+
+  // Activation
+  isActivated: (): boolean => {
+    return getLocal<boolean>(STORAGE_KEYS.IS_ACTIVATED, false);
+  },
+  activate: async (pin: string): Promise<boolean> => {
+    if (pin === ACTIVATION_PIN) {
+      await setLocal(STORAGE_KEYS.IS_ACTIVATED, true);
+      return true;
+    }
+    return false;
+  },
+
+  // Storage Maintenance
+  vacuum: async () => {
+    console.log('Running storage maintenance...');
+    const businesses = localDb.getBusinesses();
+    const products = getLocal<Product[]>(STORAGE_KEYS.PRODUCTS, []);
+    
+    // Check for large images and compress if needed
+    const { compressImage } = await import('../lib/imageUtils');
+    
+    let changed = false;
+    
+    // Compress business logos
+    for (const b of businesses) {
+      if (b.logo && b.logo.length > 50000 && !b.logo.startsWith('idb://')) { // > 50KB and not already offloaded
+        try {
+          const compressed = await compressImage(b.logo, 300, 300, 0.5);
+          b.logo = compressed;
+          changed = true;
+        } catch (e) {
+          console.error('Failed to compress business logo', e);
+        }
+      }
+    }
+    if (changed) await setLocal(STORAGE_KEYS.BUSINESSES, businesses);
+    
+    changed = false;
+    // Compress product images
+    for (const p of products) {
+      if (p.imageUrl && p.imageUrl.length > 50000 && !p.imageUrl.startsWith('idb://')) { // > 50KB and not already offloaded
+        try {
+          const compressed = await compressImage(p.imageUrl, 300, 300, 0.5);
+          p.imageUrl = compressed;
+          changed = true;
+        } catch (e) {
+          console.error('Failed to compress product image', e);
+        }
+      }
+    }
+    if (changed) await setLocal(STORAGE_KEYS.PRODUCTS, products);
+
+    // IndexedDB Cleanup: Remove orphaned images
+    try {
+      const allKeys = await idbKeys(customStore);
+      const imageKeys = allKeys.filter((k: any) => typeof k === 'string' && k.startsWith('img_'));
+      
+      // Collect all referenced idb:// keys from localStorage
+      const referencedKeys = new Set<string>();
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k) {
+          const val = localStorage.getItem(k);
+          if (val) {
+            const matches = val.match(/idb:\/\/img_[a-zA-Z0-9_.-]+/g);
+            if (matches) {
+              matches.forEach(m => referencedKeys.add(m.replace('idb://', '')));
+            }
+          }
+        }
+      }
+
+      // Delete orphaned keys
+      for (const key of imageKeys) {
+        if (!referencedKeys.has(key as string)) {
+          console.log(`Deleting orphaned image from IndexedDB: ${key}`);
+          await idbDel(key as string, customStore);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to cleanup IndexedDB', e);
+    }
+    
+    console.log('Storage maintenance complete.');
+  },
+
+  // Image Helper
+  getImage: async (url: string): Promise<string> => {
+    if (url.startsWith('idb://')) {
+      const key = url.replace('idb://', '');
+      return await idbGet(key, customStore) || '';
+    }
+    return url;
+  }
 };

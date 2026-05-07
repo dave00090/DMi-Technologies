@@ -407,6 +407,7 @@ export const Reports: React.FC<ReportsProps> = ({ businessProfile, shop }) => {
                 <th className="px-6 py-4">Date</th>
                 <th className="px-6 py-4">Transaction ID</th>
                 <th className="px-6 py-4">Cashier</th>
+                <th className="px-6 py-4">Customer</th>
                 <th className="px-6 py-4">Payment</th>
                 <th className="px-6 py-4">Rec/Chg</th>
                 <th className="px-6 py-4">Items</th>
@@ -415,43 +416,54 @@ export const Reports: React.FC<ReportsProps> = ({ businessProfile, shop }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-black/5">
-              {salesData.map((sale) => (
-                <tr key={sale.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4 text-sm">{format(new Date(sale.timestamp), 'MMM dd, HH:mm')}</td>
-                  <td className="px-6 py-4 text-sm font-mono text-gray-500">{sale.id.slice(0, 8)}</td>
-                  <td className="px-6 py-4 text-sm">{sale.cashierName}</td>
-                  <td className="px-6 py-4">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      sale.paymentMethod === 'CASH' ? 'bg-primary/10 text-primary' :
-                      sale.paymentMethod === 'MPESA' ? 'bg-accent/10 text-accent' :
-                      'bg-secondary/10 text-secondary'
-                    }`}>
-                      {sale.paymentMethod}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    {sale.paymentMethod === 'CASH' && sale.cashReceived !== undefined ? (
-                      <div className="text-[10px] leading-tight">
-                        <p className="text-gray-500">R: {formatCurrency(sale.cashReceived)}</p>
-                        <p className="text-indigo-600 font-bold">C: {formatCurrency(sale.change || 0)}</p>
-                      </div>
-                    ) : (
-                      <span className="text-gray-300 text-[10px]">-</span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 text-sm">{sale.items.length} items</td>
-                  <td className="px-6 py-4 text-sm font-bold text-right">{formatCurrency(sale.total)}</td>
-                  <td className="px-6 py-4 text-right">
-                    <button 
-                      onClick={() => handleDeleteSale(sale.id)}
-                      className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
-                      title="Delete Transaction"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {salesData.map((sale) => {
+                const isDebtPayment = sale.items.some(item => item.productId === 'DEBT_PAYMENT');
+                return (
+                  <tr key={sale.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 text-sm">{format(new Date(sale.timestamp), 'MMM dd, HH:mm')}</td>
+                    <td className="px-6 py-4 text-sm font-mono text-gray-500">{sale.id.slice(0, 8)}</td>
+                    <td className="px-6 py-4 text-sm">{sale.cashierName}</td>
+                    <td className="px-6 py-4 text-sm italic text-gray-500">{sale.customerName || 'Walk-in'}</td>
+                    <td className="px-6 py-4">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        isDebtPayment ? 'bg-emerald-100 text-emerald-600' :
+                        sale.paymentMethod === 'CASH' ? 'bg-primary/10 text-primary' :
+                        sale.paymentMethod === 'MPESA' ? 'bg-accent/10 text-accent' :
+                        'bg-secondary/10 text-secondary'
+                      }`}>
+                        {isDebtPayment ? 'PAID' : sale.paymentMethod}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      {sale.paymentMethod === 'CASH' && sale.cashReceived !== undefined ? (
+                        <div className="text-[10px] leading-tight">
+                          <p className="text-gray-500">R: {formatCurrency(sale.cashReceived)}</p>
+                          <p className="text-indigo-600 font-bold">C: {formatCurrency(sale.change || 0)}</p>
+                        </div>
+                      ) : (
+                        <span className="text-gray-300 text-[10px]">-</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      {isDebtPayment ? (
+                        <span className="font-bold text-emerald-600">Debt Payment</span>
+                      ) : (
+                        `${sale.items.length} items`
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-sm font-bold text-right">{formatCurrency(sale.total)}</td>
+                    <td className="px-6 py-4 text-right">
+                      <button 
+                        onClick={() => handleDeleteSale(sale.id)}
+                        className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                        title="Delete Transaction"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
               {salesData.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-6 py-12 text-center text-gray-500">

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
-import { Customer, UserProfile, Sale } from '../types';
+import { Customer, UserProfile, Sale, Debt } from '../types';
 import { 
   UserPlus, 
   Search, 
@@ -19,7 +19,8 @@ import {
   Calendar,
   DollarSign,
   BookOpen,
-  Download
+  Download,
+  User
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
@@ -33,6 +34,7 @@ interface CustomersProps {
 
 export const Customers: React.FC<CustomersProps> = ({ user, businessId, onViewLedger }) => {
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [allDebts, setAllDebts] = useState<Debt[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -47,8 +49,12 @@ export const Customers: React.FC<CustomersProps> = ({ user, businessId, onViewLe
 
   useEffect(() => {
     const updateCustomers = async () => {
-      const c = await db.getCustomers(businessId);
+      const [c, d] = await Promise.all([
+        db.getCustomers(businessId),
+        db.getAllDebts(businessId)
+      ]);
       setCustomers(c);
+      setAllDebts(d);
     };
     
     updateCustomers();
@@ -72,25 +78,83 @@ export const Customers: React.FC<CustomersProps> = ({ user, businessId, onViewLe
 
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [purchaseHistory, setPurchaseHistory] = useState<Sale[]>([]);
+  const [customerDebts, setCustomerDebts] = useState<Debt[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [isProcessingDebt, setIsProcessingDebt] = useState(false);
+
+  const fetchHistoryAndDebts = async () => {
+    if (!selectedCustomer) return;
+    setLoadingHistory(true);
+    try {
+      const [sales, debts] = await Promise.all([
+        db.getSales(businessId),
+        db.getDebts(selectedCustomer.id)
+      ]);
+      const history = sales.filter(s => s.customerId === selectedCustomer.id);
+      setPurchaseHistory(history.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+      setCustomerDebts(debts.filter(d => d.status === 'PENDING' || d.status === 'PARTIAL'));
+    } catch (error) {
+      console.error("Error fetching history:", error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchHistory = async () => {
-      if (!selectedCustomer) return;
-      setLoadingHistory(true);
-      try {
-        const sales = await db.getSales(businessId);
-        const history = sales.filter(s => s.customerId === selectedCustomer.id);
-        setPurchaseHistory(history.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
-      } catch (error) {
-        console.error("Error fetching history:", error);
-      } finally {
-        setLoadingHistory(false);
-      }
-    };
-
-    fetchHistory();
+    fetchHistoryAndDebts();
   }, [selectedCustomer, businessId]);
+
+  const handlePayDebt = async (debtId: string, amount: number) => {
+    if (isProcessingDebt) return;
+    setIsProcessingDebt(true);
+    try {
+      await db.payDebt(debtId, amount, user.uid, user.name);
+      showSuccess("Debt Paid Successfully");
+      
+      // Update local state for immediate feedback
+      const [newCustomers, newDebts] = await Promise.all([
+        db.getCustomers(businessId),
+        db.getAllDebts(businessId)
+      ]);
+      setCustomers(newCustomers);
+      setAllDebts(newDebts);
+      
+      if (selectedCustomer) {
+        await fetchHistoryAndDebts();
+      }
+    } catch (error) {
+      console.error("Error paying debt:", error);
+    } finally {
+      setIsProcessingDebt(false);
+    }
+  };
+
+  const handlePayAllCustomerDebts = async (customerId: string) => {
+    if (isProcessingDebt) return;
+    setIsProcessingDebt(true);
+    try {
+      const customerActiveDebts = allDebts.filter(d => d.customerId === customerId && (d.status === 'PENDING' || d.status === 'PARTIAL'));
+      for (const debt of customerActiveDebts) {
+        await db.payDebt(debt.id, debt.remainingAmount, user.uid, user.name);
+      }
+      showSuccess("All Debts Paid Successfully");
+      
+      const [newCustomers, newDebts] = await Promise.all([
+        db.getCustomers(businessId),
+        db.getAllDebts(businessId)
+      ]);
+      setCustomers(newCustomers);
+      setAllDebts(newDebts);
+      
+      if (selectedCustomer) {
+        await fetchHistoryAndDebts();
+      }
+    } catch (error) {
+      console.error("Error paying all debts:", error);
+    } finally {
+      setIsProcessingDebt(false);
+    }
+  };
 
   const showSuccess = (msg: string) => {
     setSuccessMessage(msg);
@@ -297,98 +361,132 @@ export const Customers: React.FC<CustomersProps> = ({ user, businessId, onViewLe
             )}
           </div>
         ) : (
-          filteredCustomers.map((customer) => (
+          filteredCustomers.map((customer) => {
+            const customerActiveDebts = allDebts.filter(d => d.customerId === customer.id && (d.status === 'PENDING' || d.status === 'PARTIAL'));
+            const totalDebt = customerActiveDebts.reduce((sum, d) => sum + d.remainingAmount, 0);
+
+            return (
             <motion.div
               layout
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               key={customer.id}
-              className="bg-card border border-border rounded-3xl p-6 shadow-sm hover:shadow-md transition-all group cursor-pointer"
+              className={`bg-card border rounded-3xl p-6 shadow-sm hover:shadow-md transition-all group cursor-pointer ${
+                totalDebt > 0 ? 'border-rose-500/30' : 'border-border'
+              }`}
               onClick={() => setSelectedCustomer(customer)}
             >
               <div className="flex justify-between items-start mb-4">
-              <div className="w-12 h-12 bg-indigo-500/10 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400">
-                <span className="text-xl font-bold">{customer.name.charAt(0)}</span>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-indigo-500/10 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                    <span className="text-xl font-bold">{customer.name.charAt(0)}</span>
+                  </div>
+                  {totalDebt > 0 && (
+                    <div className="px-3 py-1 bg-rose-500/10 text-rose-500 rounded-full animate-pulse">
+                      <p className="text-[10px] font-black uppercase">In Debt</p>
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingCustomer(customer);
+                        setFormData({
+                          name: customer.name,
+                          phone: customer.phone
+                        });
+                        setIsModalOpen(true);
+                      }}
+                      className="p-2 text-muted hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-500/10 dark:hover:bg-indigo-900/30 rounded-lg transition-all"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    {user.role === 'admin' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCustomerToDelete(customer.id);
+                          setIsDeleteConfirmOpen(true);
+                        }}
+                        className="p-2 text-muted hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 dark:hover:bg-red-900/30 rounded-lg transition-all"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onViewLedger(customer.id);
+                      }}
+                      className="p-2 text-muted hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-500/10 dark:hover:bg-emerald-900/30 rounded-lg transition-all"
+                      title="View Ledger"
+                    >
+                      <BookOpen className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditingCustomer(customer);
-                    setFormData({
-                      name: customer.name,
-                      phone: customer.phone
-                    });
-                    setIsModalOpen(true);
-                  }}
-                  className="p-2 text-muted hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-500/10 dark:hover:bg-indigo-900/30 rounded-lg transition-all"
-                >
-                  <Edit2 className="w-4 h-4" />
-                </button>
-                {user.role === 'admin' && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCustomerToDelete(customer.id);
-                      setIsDeleteConfirmOpen(true);
-                    }}
-                    className="p-2 text-muted hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 dark:hover:bg-red-900/30 rounded-lg transition-all"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onViewLedger(customer.id);
-                  }}
-                  className="p-2 text-muted hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-500/10 dark:hover:bg-emerald-900/30 rounded-lg transition-all"
-                  title="View Ledger"
-                >
-                  <BookOpen className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
 
-            <h3 className="text-lg font-bold text-ink mb-1">{customer.name}</h3>
-            
-            <div className="space-y-2 mb-6">
-              {customer.email && (
+              <h3 className="text-lg font-bold text-ink mb-1">{customer.name}</h3>
+              
+              <div className="space-y-2 mb-6">
+                {customer.email && (
+                  <a 
+                    href={`mailto:${customer.email}`}
+                    className="flex items-center gap-2 text-sm text-muted hover:text-indigo-500 transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Mail className="w-4 h-4 text-indigo-500" />
+                    <span>{customer.email}</span>
+                  </a>
+                )}
                 <a 
-                  href={`mailto:${customer.email}`}
+                  href={`tel:${customer.phone}`}
                   className="flex items-center gap-2 text-sm text-muted hover:text-indigo-500 transition-colors"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <Mail className="w-4 h-4 text-indigo-500" />
-                  <span>{customer.email}</span>
+                  <Phone className="w-4 h-4 text-indigo-500" />
+                  <span>{customer.phone}</span>
                 </a>
-              )}
-              <a 
-                href={`tel:${customer.phone}`}
-                className="flex items-center gap-2 text-sm text-muted hover:text-indigo-500 transition-colors"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Phone className="w-4 h-4 text-indigo-500" />
-                <span>{customer.phone}</span>
-              </a>
-            </div>
+              </div>
 
-            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
-              <div>
-                <p className="text-[10px] font-bold text-muted uppercase mb-1">Loyalty Points</p>
-                <div className="flex items-center gap-1 text-indigo-600 font-bold">
-                  <Award className="w-4 h-4" />
-                  <span>{customer.loyaltyPoints}</span>
+              {totalDebt > 0 && (
+                <div className="mb-4 bg-rose-500/5 rounded-2xl p-4 flex items-center justify-between border border-rose-500/10">
+                  <div>
+                    <p className="text-[10px] font-bold text-muted uppercase">Total Debt</p>
+                    <p className="text-lg font-black text-rose-500">KSh{totalDebt.toLocaleString()}</p>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePayAllCustomerDebts(customer.id);
+                    }}
+                    disabled={isProcessingDebt}
+                    className="px-4 py-2 bg-emerald-600 text-white text-[10px] font-black rounded-xl shadow-lg hover:bg-emerald-700 transition-all disabled:opacity-50 active:scale-95"
+                  >
+                    {isProcessingDebt ? '...' : 'PAY DEBT'}
+                  </button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
+                <div>
+                  <p className="text-[10px] font-bold text-muted uppercase mb-1">Loyalty Points</p>
+                  <div className="flex items-center gap-1 text-indigo-600 font-bold">
+                    <Award className="w-4 h-4" />
+                    <span>{customer.loyaltyPoints}</span>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-muted uppercase mb-1">Total Spent</p>
+                  <div className="flex items-center gap-1 text-emerald-600 font-bold">
+                    <TrendingUp className="w-4 h-4" />
+                    <span>KSh{(customer.totalSpent || 0).toLocaleString()}</span>
+                  </div>
                 </div>
               </div>
-              <div>
-                <p className="text-[10px] font-bold text-muted uppercase mb-1">Total Spent</p>
-                <div className="flex items-center gap-1 text-emerald-600 font-bold">
-                  <TrendingUp className="w-4 h-4" />
-                  <span>${customer.totalSpent.toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
 
             {customer.lastPurchaseDate && (
               <div className="mt-4 pt-4 border-t border-border flex items-center justify-between text-[10px] text-muted">
@@ -400,7 +498,9 @@ export const Customers: React.FC<CustomersProps> = ({ user, businessId, onViewLe
               </div>
             )}
           </motion.div>
-        )))}
+          );
+        })
+      )}
       </div>
 
       {/* Purchase History Modal */}
@@ -423,11 +523,11 @@ export const Customers: React.FC<CustomersProps> = ({ user, businessId, onViewLe
               <div className="p-6 border-b border-border flex items-center justify-between bg-muted/30">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-indigo-500/10 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400">
-                    <History className="w-6 h-6" />
+                    <User className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold text-ink">Purchase History</h3>
-                    <p className="text-sm text-muted">{selectedCustomer.name}</p>
+                    <h3 className="text-xl font-bold text-ink">{selectedCustomer.name}</h3>
+                    <p className="text-sm text-muted">Customer Summary & History</p>
                   </div>
                 </div>
                 <button onClick={() => setSelectedCustomer(null)} className="p-2 hover:bg-muted rounded-xl transition-all">
@@ -435,55 +535,89 @@ export const Customers: React.FC<CustomersProps> = ({ user, businessId, onViewLe
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6">
-                {loadingHistory ? (
-                  <div className="flex items-center justify-center py-20">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
-                  </div>
-                ) : purchaseHistory.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-20 text-muted gap-4">
-                    <ShoppingBag className="w-12 h-12 opacity-20" />
-                    <p className="text-sm font-bold">No purchases found for this customer</p>
-                  </div>
-                ) : (
+              <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                {/* Active Debts Section */}
+                {customerDebts.length > 0 && (
                   <div className="space-y-4">
-                    {purchaseHistory.map((sale) => (
-                      <div key={sale.id} className="p-4 rounded-2xl border border-border hover:border-indigo-500/30 transition-all bg-bg/50">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 bg-card rounded-lg border border-border">
-                              <Calendar className="w-4 h-4 text-muted" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-bold text-ink">
-                                {format(new Date(sale.timestamp), 'MMM dd, yyyy')}
-                              </p>
-                              <p className="text-[10px] text-muted uppercase font-bold">
-                                {format(new Date(sale.timestamp), 'HH:mm')} • ID: {sale.id.slice(-6).toUpperCase()}
-                              </p>
-                            </div>
+                    <div className="flex items-center gap-2 text-rose-500">
+                      <DollarSign className="w-5 h-5" />
+                      <h4 className="text-sm font-black uppercase tracking-widest">Unpaid Debts ({customerDebts.length})</h4>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3">
+                      {customerDebts.map((debt) => (
+                        <div key={debt.id} className="p-4 bg-rose-500/5 border border-rose-500/20 rounded-2xl flex items-center justify-between">
+                          <div>
+                            <p className="text-[10px] font-bold text-muted uppercase">Amount Due</p>
+                            <p className="text-lg font-black text-rose-500">KSh{debt.remainingAmount.toLocaleString()}</p>
+                            <p className="text-[10px] text-muted font-bold">Ref: Sale #{debt.saleId.slice(-8).toUpperCase()}</p>
                           </div>
-                          <div className="text-right">
-                            <p className="text-sm font-bold text-emerald-600 flex items-center justify-end gap-1">
-                              <DollarSign className="w-4 h-4" />
-                              {sale.total.toFixed(2)}
-                            </p>
-                            <p className="text-[10px] text-muted font-bold">
-                              {sale.items.reduce((sum, i) => sum + i.quantity, 0)} items
-                            </p>
-                          </div>
+                          <button
+                            onClick={() => handlePayDebt(debt.id, debt.remainingAmount)}
+                            disabled={isProcessingDebt}
+                            className="px-6 py-2 bg-emerald-600 text-white text-xs font-black rounded-xl shadow-lg hover:bg-emerald-700 transition-all disabled:opacity-50"
+                          >
+                            {isProcessingDebt ? 'PROCESSING...' : 'MARK AS PAID'}
+                          </button>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          {sale.items.map((item, idx) => (
-                            <span key={idx} className="px-2 py-1 bg-card border border-border rounded-lg text-[10px] text-muted">
-                              {item.quantity}x {item.name} ({item.variantName})
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 )}
+
+                {/* Purchase History Section */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-indigo-500">
+                    <History className="w-5 h-5" />
+                    <h4 className="text-sm font-black uppercase tracking-widest">Recent Purchases</h4>
+                  </div>
+                  {loadingHistory ? (
+                    <div className="flex items-center justify-center py-10">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+                    </div>
+                  ) : purchaseHistory.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-10 text-muted gap-4">
+                      <ShoppingBag className="w-12 h-12 opacity-20" />
+                      <p className="text-sm font-bold">No purchases found</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {purchaseHistory.map((sale) => (
+                        <div key={sale.id} className="p-4 rounded-2xl border border-border hover:border-indigo-500/30 transition-all bg-bg/50">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 bg-card rounded-lg border border-border text-muted">
+                                <Calendar className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-bold text-ink">
+                                  {format(new Date(sale.timestamp), 'MMM dd, yyyy')}
+                                </p>
+                                <p className="text-[10px] text-muted uppercase font-bold">
+                                  {format(new Date(sale.timestamp), 'HH:mm')} • {sale.paymentMethod}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-bold text-emerald-600">
+                                KSh{sale.total.toLocaleString()}
+                              </p>
+                              <p className="text-[10px] text-muted font-bold">
+                                {sale.items.length} items
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {sale.items.map((item, idx) => (
+                              <span key={idx} className="px-2 py-0.5 bg-card border border-border rounded-lg text-[10px] text-muted">
+                                {item.quantity}x {item.name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </motion.div>
           </div>

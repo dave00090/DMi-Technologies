@@ -248,7 +248,9 @@ export const localDb = {
   // Sales
   getSales: async (businessId: string, shopId?: string): Promise<Sale[]> => {
     const all = getLocal<Sale[]>(STORAGE_KEYS.SALES, []);
-    return all.filter(s => s.businessId === businessId && (!shopId || s.shopId === shopId));
+    return all
+      .filter(s => s.businessId === businessId && (!shopId || s.shopId === shopId))
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   },
   addSale: async (sale: Omit<Sale, 'id'>) => {
     const all = getLocal<Sale[]>(STORAGE_KEYS.SALES, []);
@@ -527,6 +529,63 @@ export const localDb = {
     const updated = all.map(d => d.id === id ? { ...d, ...updates } : d);
     await setLocal(STORAGE_KEYS.DEBTS, updated);
   },
+  payDebt: async (debtId: string, amount: number, cashierId: string, cashierName: string) => {
+    const allDebts = getLocal<Debt[]>(STORAGE_KEYS.DEBTS, []);
+    const debt = allDebts.find(d => d.id === debtId);
+    if (!debt) throw new Error('Debt not found');
+
+    const customer = (await localDb.getCustomers(debt.businessId)).find(c => c.id === debt.customerId);
+    if (!customer) throw new Error('Customer not found');
+
+    // 1. Update debt
+    const updatedDebts = allDebts.map(d => d.id === debtId ? { ...d, remainingAmount: 0, status: 'PAID' as const } : d);
+    await setLocal(STORAGE_KEYS.DEBTS, updatedDebts);
+
+    // 2. Create a generic Sale for the payment representation (so it shows in recent transactions)
+    // IMPORTANT: We use a special category "DEBT_PAYMENT" to distinguish it if needed
+    const sale: Omit<Sale, 'id'> = {
+      businessId: debt.businessId,
+      shopId: debt.shopId,
+      items: [{
+        productId: 'DEBT_PAYMENT',
+        variantId: 'DEBT_PAYMENT',
+        name: 'Debt Payment',
+        variantName: `For Order #${debt.saleId.slice(-8).toUpperCase()}`,
+        quantity: 1,
+        price: amount,
+        originalPrice: amount,
+        buyingPrice: 0,
+        unit: 'payment'
+      }],
+      total: amount,
+      timestamp: new Date().toISOString(),
+      cashierId,
+      cashierName,
+      customerId: debt.customerId,
+      customerName: customer.name,
+      paymentMethod: 'CASH', // Payment received in cash
+    };
+    const newSale = await localDb.addSale(sale);
+
+    // 3. Add Ledger Entry (CREDIT)
+    const currentLedger = localDb.getLedger(debt.customerId, 'CUSTOMER');
+    const lastBalance = currentLedger.length > 0 ? currentLedger[currentLedger.length - 1].balanceAfter : 0;
+    
+    await localDb.addLedgerEntry({
+      businessId: debt.businessId,
+      shopId: debt.shopId,
+      entityId: debt.customerId,
+      entityType: 'CUSTOMER',
+      type: 'CREDIT',
+      amount: amount,
+      balanceAfter: lastBalance - amount,
+      description: `Debt settlement for order #${debt.saleId.slice(-8).toUpperCase()}`,
+      referenceId: newSale.id,
+      timestamp: new Date().toISOString()
+    });
+
+    return newSale;
+  },
 
   // Ledger
   getLedger: (entityId: string, entityType: 'CUSTOMER' | 'SUPPLIER'): LedgerEntry[] => {
@@ -560,10 +619,12 @@ export const localDb = {
   getSalesReport: (businessId: string, startDate: Date, endDate: Date, shopId?: string) => {
     const sales = getLocal<Sale[]>(STORAGE_KEYS.SALES, []);
     const filtered = sales.filter(s => s.businessId === businessId && (!shopId || s.shopId === shopId));
-    return filtered.filter(s => {
-      const date = new Date(s.timestamp);
-      return date >= startDate && date <= endDate;
-    });
+    return filtered
+      .filter(s => {
+        const date = new Date(s.timestamp);
+        return date >= startDate && date <= endDate;
+      })
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   },
 
   getSalesByCustomer: (customerId: string): Sale[] => {
