@@ -104,7 +104,7 @@ window.addEventListener('storage', async (event) => {
 });
 
 // Helper to get data from localStorage
-export const getLocal = <T>(key: string, defaultValue: T): T => {
+export const getLocal = <T extends unknown>(key: string, defaultValue: T): T => {
   if (dbCache[key] !== undefined && dbCache[key] !== null) {
     return dbCache[key] as T;
   }

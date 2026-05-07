@@ -274,7 +274,7 @@ export const Ledger: React.FC<LedgerProps> = ({ businessId, user, initialSelecti
                                   : 'bg-emerald-600 text-white hover:bg-emerald-700'
                               } disabled:opacity-50`}
                             >
-                              {isProcessing ? '...' : 'Paid'}
+                              {isProcessing ? '...' : 'Clear'}
                             </button>
                           )}
                         </div>
