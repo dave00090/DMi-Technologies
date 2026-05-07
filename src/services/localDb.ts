@@ -50,7 +50,7 @@ const ACTIVATION_PIN = '8124'; // Master activation PIN for the developer to sel
 const dbCache: Record<string, any> = {};
 
 // Initialize cache from localStorage and IndexedDB
-export const initDb = async () => {
+export async function initDb() {
   // Load all keys from IndexedDB first (source of truth)
   try {
     const allKeys = await idbKeys(customStore);
@@ -104,9 +104,9 @@ window.addEventListener('storage', async (event) => {
 });
 
 // Helper to get data from localStorage
-export function getLocal<T extends unknown>(key: string, defaultValue: T): T {
+export function getLocal<Value>(key: string, defaultValue: Value): Value {
   if (dbCache[key] !== undefined && dbCache[key] !== null) {
-    return dbCache[key] as T;
+    return dbCache[key] as Value;
   }
   const data = localStorage.getItem(key);
   if (data === '__idb_ref__') return defaultValue; // Should have been loaded by initDb
@@ -148,7 +148,7 @@ const offloadLargeFields = async (obj: any, key: string): Promise<any> => {
 };
 
 // Helper to set data to localStorage with automatic IndexedDB offloading for large fields
-export async function setLocal<T extends unknown>(key: string, data: T): Promise<void> {
+export async function setLocal<Value>(key: string, data: Value): Promise<void> {
   // Update cache immediately
   dbCache[key] = data;
   
@@ -205,7 +205,7 @@ export async function setLocal<T extends unknown>(key: string, data: T): Promise
 }
 
 // Helper to remove data from both localStorage and IndexedDB
-export const removeLocal = async (key: string): Promise<void> => {
+export async function removeLocal(key: string): Promise<void> {
   delete dbCache[key];
   localStorage.removeItem(key);
   try {
@@ -215,7 +215,7 @@ export const removeLocal = async (key: string): Promise<void> => {
   }
   // Dispatch global sync event for in-tab listeners
   window.dispatchEvent(new CustomEvent('local-db-update', { detail: { key } }));
-};
+}
 
 // Local Database Service
 export const localDb = {
