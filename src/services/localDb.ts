@@ -104,7 +104,7 @@ window.addEventListener('storage', async (event) => {
 });
 
 // Helper to get data from localStorage
-export const getLocal = <T,>(key: string, defaultValue: T): T => {
+export const getLocal = <T extends unknown>(key: string, defaultValue: T): T => {
   if (dbCache[key] !== undefined && dbCache[key] !== null) {
     return dbCache[key] as T;
   }
@@ -148,7 +148,7 @@ const offloadLargeFields = async (obj: any, key: string): Promise<any> => {
 };
 
 // Helper to set data to localStorage with automatic IndexedDB offloading for large fields
-export const setLocal = async <T,>(key: string, data: T): Promise<void> => {
+export const setLocal = async <T extends unknown>(key: string, data: T): Promise<void> => {
   // Update cache immediately
   dbCache[key] = data;
   
