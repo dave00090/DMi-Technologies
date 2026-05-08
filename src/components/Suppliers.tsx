@@ -54,6 +54,14 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
     createdAt: new Date().toISOString()
   });
 
+  // Auto-calculate balance
+  useEffect(() => {
+    setFormData(prev => ({
+      ...prev,
+      balance: prev.totalSupplied - prev.totalPaid
+    }));
+  }, [formData.totalSupplied, formData.totalPaid]);
+
   useEffect(() => {
     const fetchData = async () => {
       const [supps, profile] = await Promise.all([
@@ -527,12 +535,9 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
                         <label className="text-xs font-bold text-muted uppercase">Balance Owed ({businessProfile?.currency || 'KSh'})</label>
                         <input
                           type="number"
-                          className="w-full px-4 py-2.5 bg-card border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                          readOnly
+                          className="w-full px-4 py-2.5 bg-muted/30 border border-border text-muted rounded-xl outline-none cursor-not-allowed"
                           value={formData.balance || 0}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value);
-                            setFormData({ ...formData, balance: isNaN(val) ? 0 : val });
-                          }}
                         />
                       </div>
                     </div>

@@ -968,6 +968,13 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
                     />
                   </div>
                   
+                  {cashAmount && parseFloat(cashAmount) >= total && (
+                    <div className="bg-emerald-500 px-4 py-2 rounded-xl border border-emerald-400 text-white flex flex-col items-center justify-center min-w-[120px] animate-in zoom-in-95">
+                      <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1">CHANGE DUE</p>
+                      <p className="text-xl font-black">{formatCurrency(parseFloat(cashAmount) - total)}</p>
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap gap-2">
                     {[100, 200, 500, 1000].map(amt => (
                       <button
