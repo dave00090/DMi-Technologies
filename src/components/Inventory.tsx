@@ -323,8 +323,19 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
   const categories = getCategories();
 
   const getVariantLabels = () => {
+    const category = formData.category.toLowerCase();
+    const isTaxi = category.includes('taxi') || category.includes('transport');
+    
+    if (isTaxi) {
+      return { size: 'Destination', color: 'Trip Type / Details' };
+    }
+
     if (formData.type === 'SERVICE') {
-      return { size: 'Estimated Duration (Min)', color: 'Style Name / Option' };
+      const isHotel = businessProfile?.type === 'HOTEL';
+      return { 
+        size: isHotel ? 'Duration (Hrs/Days)' : 'Estimated Duration (Min)', 
+        color: isHotel ? 'Service Type / Room' : 'Style Name / Option' 
+      };
     }
     if (!businessProfile) return { size: 'Size', color: 'Color' };
     switch (businessProfile.type) {
@@ -349,7 +360,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
       case 'PETROL_STATION':
         return { size: 'Volume (L)', color: 'Nozzle' };
       case 'HOTEL':
-        return { size: 'Nights', color: 'Room No.' };
+        return { size: 'Duration (Hrs/Days)', color: 'Room Type / Unit No.' };
       case 'RETAIL':
       case 'GROCERY':
       case 'OTHER':
@@ -566,6 +577,14 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
               { businessId, shopId, name: 'Engine Oil', category: 'Lubricants', basePrice: 40, lowStockThreshold: 5, variants: [{ id: 'v2', name: '4L', stock: 15, sku: 'FUEL-OIL-001' }], description: 'Synthetic blend' },
               { businessId, shopId, name: 'Ajab Flour', category: 'Shop Items', basePrice: 1.5, lowStockThreshold: 10, variants: [{ id: 'v3', name: '2kg', stock: 50, sku: 'SHOP-AJB-001' }], description: 'Premium wheat flour' }
             ];
+          case 'HOTEL':
+            return [
+              { businessId, shopId, type: 'SERVICE', name: 'Deluxe Suite', category: 'Rooms', basePrice: 150, duration: 24, variants: [{ id: 'v1', color: 'Room 101 - Pool View', size: '1 Day', price: 150, stock: 1000 }, { id: 'v2', color: 'Room 102 - Garden View', size: '1 Day', price: 135, stock: 1000 }], description: 'Luxury deluxe suite with bed and breakfast.' },
+              { businessId, shopId, type: 'SERVICE', name: 'Standard Room', category: 'Rooms', basePrice: 80, duration: 24, variants: [{ id: 'v3', color: 'Room 201', size: '1 Day', price: 80, stock: 1000 }, { id: 'v4', color: 'Room 202', size: '1 Day', price: 80, stock: 1000 }], description: 'Comfortable standard room options.' },
+              { businessId, shopId, type: 'SERVICE', name: 'Airport Transfer (Tesla)', category: 'Transport', basePrice: 45, duration: 1, variants: [{ id: 'v5', color: 'One Way', size: '1 Hr', price: 45, stock: 1000 }, { id: 'v6', color: 'Round Trip', size: '2 Hrs', price: 80, stock: 1000 }], description: 'Luxury taxi service to/from airport.' },
+              { businessId, shopId, type: 'SERVICE', name: 'Full Board Upgrade', category: 'Meals', basePrice: 30, duration: 24, variants: [{ id: 'v7', color: 'Chef\'s Choice', size: '1 Day', price: 30, stock: 1000 }], description: 'Upgrade from B&B to full board.' },
+              { businessId, shopId, type: 'SERVICE', name: 'City Tour', category: 'Activities', basePrice: 60, duration: 4, variants: [{ id: 'v8', color: 'Guided Private', size: '4 Hrs', price: 60, stock: 1000 }], description: 'Explore the city with our expert guides.' }
+            ];
           case 'OTHER':
             return [
               { businessId, shopId, name: 'General Item', category: 'General', basePrice: 10, lowStockThreshold: 5, variants: [{ id: 'v1', name: 'Standard', stock: 50, sku: 'OTH-GEN-001' }], description: 'A general inventory item' },
@@ -703,16 +722,20 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
             <button
               onClick={() => {
                 setEditingProduct(null);
+                const defaultCategory = businessProfile?.type === 'HOTEL' ? 'Rooms' : 'Haircut';
+                const defaultDuration = businessProfile?.type === 'HOTEL' ? 24 : 30;
+                const defaultSize = businessProfile?.type === 'HOTEL' ? '1 Day' : '30';
+                
                 setFormData({
                   businessId,
                   shopId,
                   name: '',
-                  category: 'Haircut',
+                  category: defaultCategory,
                   buyingPrice: 0,
                   sellingPrice: 0,
                   basePrice: 0,
                   lowStockThreshold: 0,
-                  variants: [{ id: crypto.randomUUID(), size: '30', color: 'Standard', stock: 1000, sku: '', price: 0 }],
+                  variants: [{ id: crypto.randomUUID(), size: defaultSize, color: 'Standard', stock: 1000, sku: '', price: 0 }],
                   description: '',
                   imageUrl: '',
                   type: 'SERVICE',
@@ -726,7 +749,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                   warranty: '',
                   unit: 'service',
                   isService: true,
-                  duration: 30,
+                  duration: defaultDuration,
                   roomType: '',
                   fuelType: '',
                   material: '',
@@ -1165,7 +1188,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                     className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
                     value={formData.name || ''}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder={formData.type === 'SERVICE' ? 'e.g. Haircut' : 'e.g. Shampoo'}
+                    placeholder=""
                   />
                 </div>
 
@@ -1184,7 +1207,9 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
 
                 {formData.type === 'SERVICE' ? (
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-muted uppercase">Base Duration (Minutes)</label>
+                    <label className="text-xs font-bold text-muted uppercase">
+                      Base Duration ({businessProfile?.type === 'HOTEL' ? 'Hrs/Days' : 'Minutes'})
+                    </label>
                     <input
                       type="number"
                       className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
@@ -1269,14 +1294,14 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                   </>
                 )}
 
-                {(businessProfile?.type === 'RESTAURANT' || businessProfile?.type === 'FAST_FOOD' || businessProfile?.type === 'BAR_RESTAURANT' || businessProfile?.type === 'OTHER') && (
+                {(businessProfile?.type === 'RESTAURANT' || businessProfile?.type === 'FAST_FOOD' || businessProfile?.type === 'BAR_RESTAURANT' || businessProfile?.type === 'HOTEL' || businessProfile?.type === 'OTHER') && (
                   <div className="col-span-2 space-y-2">
                     <label className="text-xs font-bold text-muted uppercase">Ingredients / Description</label>
                     <textarea
                       className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-h-[80px]"
                       value={formData.description || ''}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      placeholder="e.g. Served with chips and salad"
+                      placeholder={businessProfile?.type === 'HOTEL' ? "e.g. Inclusive of Bed & Breakfast, private balcony" : "e.g. Served with chips and salad"}
                     />
                   </div>
                 )}
@@ -1295,7 +1320,9 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                     </div>
                     {formData.isService && (
                       <div className="space-y-2">
-                        <label className="text-xs font-bold text-muted uppercase">Duration (Minutes)</label>
+                        <label className="text-xs font-bold text-muted uppercase">
+                          Duration ({businessProfile?.type === 'HOTEL' ? 'Hrs/Days' : 'Minutes'})
+                        </label>
                         <input
                           type="number"
                           className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
@@ -1308,20 +1335,26 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                       </div>
                     )}
                     {(businessProfile?.type === 'HOTEL' || businessProfile?.type === 'OTHER') && (
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-muted uppercase">Room Type</label>
-                        <select
-                          className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                          value={formData.roomType}
-                          onChange={(e) => setFormData({ ...formData, roomType: e.target.value })}
-                        >
-                          <option value="">Select Room Type</option>
-                          <option value="SINGLE">Single Room</option>
-                          <option value="DOUBLE">Double Room</option>
-                          <option value="DELUXE">Deluxe Suite</option>
-                          <option value="EXECUTIVE">Executive Suite</option>
-                        </select>
-                      </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold text-muted uppercase">Room / Service Type</label>
+                            <select
+                              className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                              value={formData.roomType}
+                              onChange={(e) => setFormData({ ...formData, roomType: e.target.value })}
+                            >
+                              <option value="">Select Type</option>
+                              <option value="STANDARD_BB">Standard Room (B&B)</option>
+                              <option value="DELUXE_BB">Deluxe Room (B&B)</option>
+                              <option value="SUITE_BB">Executive Suite (B&B)</option>
+                              <option value="APARTMENT_AIRBNB">Entire Apartment (Airbnb)</option>
+                              <option value="STUDIO_AIRBNB">Studio Apartment (Airbnb)</option>
+                              <option value="SPA_WELLNESS">SPA & Wellness Service</option>
+                              <option value="GYM_MEMBERSHIP">Gym & Fitness Access</option>
+                              <option value="TAXI_TRANSFER">Taxi / Airport Transfer</option>
+                              <option value="LAUNDRY_SERVICE">Laundry / Dry Cleaning</option>
+                              <option value="TOUR_GUIDE">Guided Tour Service</option>
+                            </select>
+                          </div>
                     )}
                   </>
                 )}
@@ -1580,7 +1613,11 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                               className="w-full px-4 py-2.5 bg-card border border-border text-ink rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
                               value={variant.size}
                               onChange={(e) => updateVariant(variant.id, 'size', e.target.value)}
-                              placeholder={formData.type === 'SERVICE' ? 'e.g. 30' : 'e.g. Large'}
+                              placeholder={formData.category.toLowerCase().includes('taxi') || formData.category.toLowerCase().includes('transport') ? 
+                                'e.g. Airport' : 
+                                (formData.type === 'SERVICE' ? 
+                                  (businessProfile?.type === 'HOTEL' ? 'e.g. 1 Day / 1 Hr' : 'e.g. 30') : 
+                                  'e.g. Large')}
                             />
                           </div>
                           <div className="space-y-1.5">
@@ -1594,36 +1631,42 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                               className="w-full px-4 py-2.5 bg-card border border-border text-ink rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
                               value={variant.color}
                               onChange={(e) => updateVariant(variant.id, 'color', e.target.value)}
-                              placeholder={formData.type === 'SERVICE' ? 'e.g. Standard' : (isRetail ? "Optional" : "e.g. Red")}
+                              placeholder={formData.category.toLowerCase().includes('taxi') || formData.category.toLowerCase().includes('transport') ? 
+                                'e.g. One Way' : 
+                                (formData.type === 'SERVICE' ? 
+                                  (businessProfile?.type === 'HOTEL' ? 'e.g. Room 101 / Sea View' : 'e.g. Standard') : 
+                                  (isRetail ? "Optional" : "e.g. Red"))}
                             />
                           </div>
 
                           <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
-                              <Tag className="w-3 h-3" />
-                              {formData.type === 'SERVICE' ? 'Style Price ($)' : 'Price Override'}
-                            </label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              required={formData.type === 'SERVICE'}
-                              className="w-full px-4 py-2.5 bg-card border border-border text-ink rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono font-bold"
-                              value={variant.price === 0 ? '0' : (variant.price || '')}
-                              onChange={(e) => {
-                                const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
-                                const priceVal = isNaN(val as number) ? undefined : val;
-                                
-                                setFormData(prev => ({
-                                  ...prev,
-                                  variants: prev.variants.map(v => v.id === variant.id ? { 
-                                    ...v, 
-                                    price: priceVal,
-                                    stock: prev.type === 'SERVICE' ? 1000 : v.stock
-                                  } : v)
-                                }));
-                              }}
-                              placeholder={formData.type === 'SERVICE' ? "Style Price" : "Optional"}
-                            />
+                              <label className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                                <Tag className="w-3 h-3" />
+                                {formData.type === 'SERVICE' ? 
+                                  (formData.category.toLowerCase().includes('taxi') ? 'Trip Fee ($)' : 'Service Fee ($)') 
+                                  : 'Price Override'}
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                required={formData.type === 'SERVICE'}
+                                className="w-full px-4 py-2.5 bg-card border border-border text-ink rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono font-bold"
+                                value={variant.price === 0 ? '0' : (variant.price || '')}
+                                onChange={(e) => {
+                                  const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
+                                  const priceVal = isNaN(val as number) ? undefined : val;
+                                  
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    variants: prev.variants.map(v => v.id === variant.id ? { 
+                                      ...v, 
+                                      price: priceVal,
+                                      stock: prev.type === 'SERVICE' ? 1000 : v.stock
+                                    } : v)
+                                  }));
+                                }}
+                                placeholder=""
+                              />
                           </div>
 
                           {formData.type === 'PRODUCT' && (
