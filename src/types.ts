@@ -146,12 +146,12 @@ export interface Debt {
 
 export interface Variant {
   id: string;
-  size: string;
-  color: string;
+  size: string; // Used for "Portion", "Volume", or "Duration" for services
+  color: string; // Used for "Style", "Type", or "Specialist" for services
   stock: number;
   sku?: string;
   lowStockThreshold?: number;
-  price?: number;
+  price?: number; // Specific price for this variant/style
 }
 
 export interface Product {
@@ -167,6 +167,7 @@ export interface Product {
   lowStockThreshold: number;
   description?: string;
   imageUrl?: string;
+  type: 'PRODUCT' | 'SERVICE';
   // Business specific fields
   expiryDate?: string;
   batchNumber?: string;
@@ -178,7 +179,7 @@ export interface Product {
   warranty?: string;
   unit?: string; // e.g., kg, pcs, l
   // Service & Hospitality fields
-  isService?: boolean;
+  isService?: boolean; // Deprecated in favor of type: 'SERVICE'
   duration?: number; // in minutes
   roomType?: string;
   fuelType?: 'PETROL' | 'DIESEL' | 'KEROSENE' | 'GAS' | '';

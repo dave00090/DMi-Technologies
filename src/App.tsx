@@ -306,12 +306,12 @@ export default function App() {
       </div>;
     }
 
-    if (!activeBusinessId) {
+    if (!activeBusinessId || !activeBusiness) {
       return <BusinessSelector onSelect={handleBusinessSelect} onLogout={handleLogout} />;
     }
 
-    if (!activeShopId || !activeBusiness) {
-      return <ShopSelector business={activeBusiness!} onSelect={handleShopSelect} onBack={handleExitBusiness} onLogout={handleLogout} />;
+    if (!activeShopId) {
+      return <ShopSelector business={activeBusiness} onSelect={handleShopSelect} onBack={handleExitBusiness} onLogout={handleLogout} />;
     }
 
     return (

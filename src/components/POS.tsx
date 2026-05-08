@@ -633,9 +633,9 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
                               </div>
                             </div>
                             <div className="mt-auto flex items-center justify-between pt-3 border-t border-slate-50">
-                              <p className="font-black text-indigo-600 text-lg">{formatCurrency(product.sellingPrice || product.basePrice)}</p>
-                              <div className={`px-2 py-1 rounded text-[9px] font-black uppercase ${totalStock <= 0 ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
-                                {product.isService ? 'Service' : totalStock <= 0 ? 'Out of Stock' : `Stock: ${totalStock}`}
+                              <p className="font-black text-indigo-600 text-lg">{formatCurrency(product.type === 'SERVICE' ? (product.sellingPrice || product.basePrice || 0) : (product.sellingPrice || product.basePrice || 0))}</p>
+                              <div className={`px-2 py-1 rounded text-[9px] font-black uppercase ${product.type === 'SERVICE' ? 'bg-indigo-50 text-indigo-600' : (totalStock <= 0 ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500')}`}>
+                                {product.type === 'SERVICE' ? 'Service' : (totalStock <= 0 ? 'Out of Stock' : `Stock: ${totalStock}`)}
                               </div>
                             </div>
                           </button>
@@ -1022,7 +1022,7 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
               <div className="p-6 border-b border-border flex items-center justify-between">
                 <div>
                   <h3 className="font-bold text-ink text-xl">{selectedProduct.name}</h3>
-                  <p className="text-muted text-sm">Select variant to add to cart</p>
+                  <p className="text-muted text-sm">{selectedProduct.type === 'SERVICE' ? 'Select service style / option' : 'Select variant to add to cart'}</p>
                 </div>
                 <button onClick={() => setSelectedProduct(null)} className="p-2 hover:bg-bg rounded-lg">
                   <X className="w-5 h-5 text-muted" />
@@ -1032,21 +1032,32 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
                 {selectedProduct.variants.map(variant => (
                   <button
                     key={variant.id}
-                    disabled={variant.stock <= 0}
+                    disabled={selectedProduct.type === 'PRODUCT' && variant.stock <= 0}
                     onClick={() => addToCart(selectedProduct, variant)}
                     className={`flex items-center justify-between rounded-2xl border p-4 transition-all ${
-                      variant.stock <= 0 
+                      selectedProduct.type === 'PRODUCT' && variant.stock <= 0 
                         ? 'bg-bg border-border opacity-50 cursor-not-allowed' 
                         : 'bg-card border-border hover:border-indigo-500 hover:bg-indigo-500/10 group'
                     }`}
                   >
                     <div className="flex items-center gap-4">
                       <div className="bg-bg rounded-xl flex items-center justify-center group-hover:bg-indigo-500/20 w-10 h-10">
-                        <Package className="w-5 h-5 text-muted group-hover:text-indigo-500" />
+                        {selectedProduct.type === 'SERVICE' ? (
+                          <Clock className="w-5 h-5 text-muted group-hover:text-indigo-500" />
+                        ) : (
+                          <Package className="w-5 h-5 text-muted group-hover:text-indigo-500" />
+                        )}
                       </div>
                       <div className="text-left">
-                        <p className="font-bold text-ink">{variant.color} / {variant.size}</p>
-                        <p className="text-muted text-xs">{variant.stock} in stock</p>
+                        <p className="font-bold text-ink">
+                          {variant.color} {variant.size ? `(${variant.size})` : ''}
+                        </p>
+                        <p className="font-black text-indigo-600 text-sm">
+                          {formatCurrency(variant.price || selectedProduct.sellingPrice || selectedProduct.basePrice || 0)}
+                        </p>
+                        {selectedProduct.type === 'PRODUCT' && (
+                          <p className="text-muted text-xs">{variant.stock} in stock</p>
+                        )}
                       </div>
                     </div>
                     <ChevronRight className="w-5 h-5 text-muted group-hover:text-indigo-500" />

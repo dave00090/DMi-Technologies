@@ -24,6 +24,7 @@ export const ShopSelector: React.FC<ShopSelectorProps> = ({ business, onSelect, 
   });
 
   useEffect(() => {
+    if (!business?.id) return;
     const fetchShops = async () => {
       try {
         const data = await db.getShops(business.id);
@@ -35,7 +36,18 @@ export const ShopSelector: React.FC<ShopSelectorProps> = ({ business, onSelect, 
       }
     };
     fetchShops();
-  }, [business.id]);
+  }, [business?.id]);
+
+  if (!business) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center p-6">
+        <div className="text-center">
+          <p className="text-muted mb-4">Business profile not found</p>
+          <button onClick={onBack} className="text-indigo-600 font-bold">Go Back</button>
+        </div>
+      </div>
+    );
+  }
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -175,6 +175,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
           variants: product.variants,
           description: product.description,
           imageUrl: product.imageUrl,
+          type: product.type || 'PRODUCT',
           expiryDate: product.expiryDate,
           batchNumber: product.batchNumber,
           partNumber: product.partNumber,
@@ -212,6 +213,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
     variants: [],
     description: '',
     imageUrl: '',
+    type: 'PRODUCT',
     expiryDate: '',
     batchNumber: '',
     partNumber: '',
@@ -321,6 +323,9 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
   const categories = getCategories();
 
   const getVariantLabels = () => {
+    if (formData.type === 'SERVICE') {
+      return { size: 'Estimated Duration (Min)', color: 'Style Name / Option' };
+    }
     if (!businessProfile) return { size: 'Size', color: 'Color' };
     switch (businessProfile.type) {
       case 'PHARMACY':
@@ -338,7 +343,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
       case 'BAR_RESTAURANT':
         return { size: 'Portion', color: 'Add-on' };
       case 'SALON_BARBER':
-        return { size: 'Duration', color: 'Specialist' };
+        return { size: 'Duration', color: 'Specialist/Type' };
       case 'BOUTIQUE':
         return { size: 'Size', color: 'Color' };
       case 'PETROL_STATION':
@@ -390,7 +395,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
         businessId,
         shopId,
         name: '', 
-        category: categories[0], 
+        category: categories[0] || 'General', 
         buyingPrice: 0,
         sellingPrice: 0,
         basePrice: 0, 
@@ -398,6 +403,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
         variants: [], 
         description: '', 
         imageUrl: '',
+        type: 'PRODUCT',
         expiryDate: '',
         batchNumber: '',
         partNumber: '',
@@ -431,10 +437,10 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
   };
 
   const updateVariant = (id: string, field: keyof Variant, value: any) => {
-    setFormData({
-      ...formData,
-      variants: formData.variants.map(v => v.id === id ? { ...v, [field]: value } : v)
-    });
+    setFormData(prev => ({
+      ...prev,
+      variants: prev.variants.map(v => v.id === id ? { ...v, [field]: value } : v)
+    }));
   };
 
   const generateBulkVariants = () => {
@@ -526,6 +532,12 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
               { businessId, shopId, name: 'Johnnie Walker Black', category: 'Whiskey', basePrice: 45, lowStockThreshold: 3, variants: [{ id: 'v2', name: '1L', stock: 15, sku: 'WKY-JW-BLK-1' }], description: 'Blended Scotch Whiskey' },
               { businessId, shopId, name: 'Absolut Vodka', category: 'Vodka', basePrice: 30, lowStockThreshold: 5, variants: [{ id: 'v3', name: '750ml', stock: 25, sku: 'VDK-ABS-750' }], description: 'Pure Swedish Vodka' },
               { businessId, shopId, name: 'Gilbey\'s Gin', category: 'Spirit', basePrice: 15, lowStockThreshold: 5, variants: [{ id: 'v4', name: '750ml', stock: 30, sku: 'SPR-GIL-750' }], description: 'Smooth London Dry Gin' }
+            ];
+          case 'SALON_BARBER':
+            return [
+              { businessId, shopId, type: 'SERVICE', name: 'Haircut', category: 'Hair', basePrice: 15, duration: 30, variants: [{ id: 'v1', color: 'Fade', size: '30', price: 15, stock: 1000 }, { id: 'v2', color: 'Style & Wash', size: '45', price: 25, stock: 1000 }], description: 'Professional haircut service' },
+              { businessId, shopId, type: 'SERVICE', name: 'Manicure', category: 'Nails', basePrice: 20, duration: 40, variants: [{ id: 'v3', color: 'Basic', size: '40', price: 20, stock: 1000 }, { id: 'v4', color: 'Gel', size: '60', price: 35, stock: 1000 }], description: 'Luxury nail care' },
+              { businessId, shopId, type: 'PRODUCT', name: 'Argan Hair Oil', category: 'Haircare', basePrice: 12, buyingPrice: 8, sellingPrice: 12, lowStockThreshold: 5, variants: [{ id: 'v5', color: '100ml', size: 'Standard', stock: 20, sku: 'SLN-OIL-100' }], description: 'Nourishing hair oil' }
             ];
           case 'PHARMACY':
             return [
@@ -645,46 +657,89 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
             className="flex items-center gap-2 px-6 py-3 bg-card border border-border hover:bg-muted text-ink font-bold rounded-2xl transition-all shadow-sm"
           >
             <Download className="w-4 h-4" />
-            Export CSV
+            Export
           </button>
-          <button
-            onClick={() => {
-              setEditingProduct(null);
-              setFormData({
-                businessId,
-                shopId,
-                name: '',
-                category: categories[0] || 'General',
-                buyingPrice: 0,
-                sellingPrice: 0,
-                basePrice: 0,
-                lowStockThreshold: 5,
-                variants: [],
-                description: '',
-                imageUrl: '',
-                expiryDate: '',
-                batchNumber: '',
-                partNumber: '',
-                modelCompatibility: '',
-                alcoholPercentage: 0,
-                volume: '',
-                brand: '',
-                warranty: '',
-                unit: 'pcs',
-                isService: false,
-                duration: 0,
-                roomType: '',
-                fuelType: '',
-                material: '',
-                ingredients: []
-              });
-              setIsModalOpen(true);
-            }}
-            className="flex items-center gap-2 px-8 py-3.5 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 transition-all"
-          >
-            <Plus className="w-5 h-5" />
-            Add Product
-          </button>
+          
+          <div className="flex bg-card p-1 border border-border rounded-2xl shadow-sm">
+            <button
+              onClick={() => {
+                setEditingProduct(null);
+                setFormData({
+                  businessId,
+                  shopId,
+                  name: '',
+                  category: categories[0] || 'General',
+                  buyingPrice: 0,
+                  sellingPrice: 0,
+                  basePrice: 0,
+                  lowStockThreshold: 5,
+                  variants: [],
+                  description: '',
+                  imageUrl: '',
+                  type: 'PRODUCT',
+                  expiryDate: '',
+                  batchNumber: '',
+                  partNumber: '',
+                  modelCompatibility: '',
+                  alcoholPercentage: 0,
+                  volume: '',
+                  brand: '',
+                  warranty: '',
+                  unit: 'pcs',
+                  isService: false,
+                  duration: 0,
+                  roomType: '',
+                  fuelType: '',
+                  material: '',
+                  ingredients: []
+                });
+                setIsModalOpen(true);
+              }}
+              className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 transition-all"
+            >
+              <ShoppingBag className="w-4 h-4" />
+              Add Product
+            </button>
+            <button
+              onClick={() => {
+                setEditingProduct(null);
+                setFormData({
+                  businessId,
+                  shopId,
+                  name: '',
+                  category: 'Haircut',
+                  buyingPrice: 0,
+                  sellingPrice: 0,
+                  basePrice: 0,
+                  lowStockThreshold: 0,
+                  variants: [{ id: crypto.randomUUID(), size: '30', color: 'Standard', stock: 1000, sku: '', price: 0 }],
+                  description: '',
+                  imageUrl: '',
+                  type: 'SERVICE',
+                  expiryDate: '',
+                  batchNumber: '',
+                  partNumber: '',
+                  modelCompatibility: '',
+                  alcoholPercentage: 0,
+                  volume: '',
+                  brand: '',
+                  warranty: '',
+                  unit: 'service',
+                  isService: true,
+                  duration: 30,
+                  roomType: '',
+                  fuelType: '',
+                  material: '',
+                  ingredients: []
+                });
+                setIsModalOpen(true);
+              }}
+              className="flex items-center gap-2 px-6 py-2.5 text-ink font-bold hover:bg-muted rounded-xl transition-all"
+            >
+              <Zap className="w-4 h-4 text-amber-500" />
+              Add Service
+            </button>
+          </div>
         </div>
       </div>
 
@@ -773,8 +828,24 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                       lowStockThreshold: 5,
                       description: '',
                       unit: 'pcs',
+                      type: 'PRODUCT',
                       businessId,
-                      shopId
+                      shopId,
+                      imageUrl: '',
+                      expiryDate: '',
+                      batchNumber: '',
+                      partNumber: '',
+                      modelCompatibility: '',
+                      alcoholPercentage: 0,
+                      volume: '',
+                      brand: '',
+                      warranty: '',
+                      isService: false,
+                      duration: 0,
+                      roomType: '',
+                      fuelType: '',
+                      material: '',
+                      ingredients: []
                     });
                     setIsModalOpen(true);
                   }}
@@ -825,6 +896,9 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                 <div>
                   <h3 className="font-bold text-ink text-lg">{product.name}</h3>
                   <div className="flex items-center gap-2 mt-1">
+                    <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] font-bold rounded uppercase border border-indigo-100">
+                      {product.type === 'SERVICE' ? 'Service' : 'Product'}
+                    </span>
                     <span className="px-2 py-0.5 bg-bg text-muted text-[10px] font-bold rounded uppercase">
                       {product.category}
                     </span>
@@ -852,26 +926,36 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
               </div>
 
               <div className="flex items-center gap-8">
+                {product.type === 'PRODUCT' && (
+                  <>
+                    <div className="text-right">
+                      <p className="text-[10px] font-bold text-muted uppercase mb-1">Buying Price</p>
+                      <p className="font-mono text-sm text-muted">${product.buyingPrice?.toFixed(2) || '0.00'}</p>
+                    </div>
+                  </>
+                )}
                 <div className="text-right">
-                  <p className="text-[10px] font-bold text-muted uppercase mb-1">Buying Price</p>
-                  <p className="font-mono text-sm text-muted">${product.buyingPrice?.toFixed(2) || '0.00'}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-bold text-muted uppercase mb-1">Selling Price</p>
+                  <p className="text-[10px] font-bold text-muted uppercase mb-1">
+                    {product.type === 'SERVICE' ? 'Standard Price' : 'Selling Price'}
+                  </p>
                   <p className="font-mono font-bold text-indigo-600">${product.sellingPrice?.toFixed(2) || product.basePrice.toFixed(2)}</p>
                 </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-bold text-muted uppercase mb-1">Profit/Unit</p>
-                  <p className="font-mono font-bold text-emerald-600">
-                    ${((product.sellingPrice || product.basePrice) - (product.buyingPrice || 0)).toFixed(2)}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs font-bold text-muted uppercase mb-1">Total Stock</p>
-                  <p className="font-bold text-ink">
-                    {product.variants.reduce((sum, v) => sum + v.stock, 0)}
-                  </p>
-                </div>
+                {product.type === 'PRODUCT' && (
+                  <>
+                    <div className="text-right">
+                      <p className="text-[10px] font-bold text-muted uppercase mb-1">Profit/Unit</p>
+                      <p className="font-mono font-bold text-emerald-600">
+                        ${((product.sellingPrice || product.basePrice) - (product.buyingPrice || 0)).toFixed(2)}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs font-bold text-muted uppercase mb-1">Total Stock</p>
+                      <p className="font-bold text-ink">
+                        {product.variants.reduce((sum, v) => sum + v.stock, 0)}
+                      </p>
+                    </div>
+                  </>
+                )}
                 <div className="flex items-center gap-2">
                   <button 
                     onClick={() => {
@@ -886,6 +970,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                         variants: product.variants,
                         description: product.description || '',
                         imageUrl: product.imageUrl || '',
+                        type: product.type || 'PRODUCT',
                         expiryDate: product.expiryDate || '',
                         batchNumber: product.batchNumber || '',
                         partNumber: product.partNumber || '',
@@ -895,6 +980,12 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                         brand: product.brand || '',
                         warranty: product.warranty || '',
                         unit: product.unit || 'pcs',
+                        isService: product.isService || false,
+                        duration: product.duration || 0,
+                        roomType: product.roomType || '',
+                        fuelType: product.fuelType || '',
+                        material: product.material || '',
+                        ingredients: product.ingredients || [],
                         businessId: product.businessId,
                         shopId: product.shopId
                       });
@@ -919,7 +1010,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
               </div>
             </div>
 
-            <div className="bg-bg/50 border-t border-border p-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            <div className={`bg-bg/50 border-t border-border p-4 grid grid-cols-2 ${product.type === 'SERVICE' ? 'md:grid-cols-3' : 'md:grid-cols-4 lg:grid-cols-6'} gap-x-4 gap-y-6`}>
               {product.variants.map(variant => {
                 const threshold = variant.lowStockThreshold ?? product.lowStockThreshold;
                 const isOutOfStock = variant.stock === 0;
@@ -929,38 +1020,55 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                 const badgeColor = isOutOfStock ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : isLowStock ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';
 
                 return (
-                  <div key={variant.id} className="bg-card p-3 rounded-xl border border-border shadow-sm group relative overflow-hidden">
-                    <div className="flex justify-between items-start mb-2">
-                      <span className="text-[10px] font-bold text-muted uppercase">
-                        {variant.size ? `${variantLabels.size} ${variant.size}` : variantLabels.size}
-                      </span>
-                      <span className={`w-2 h-2 rounded-full ${statusColor} ${isLowStock ? 'animate-pulse' : ''}`} />
-                    </div>
-                    {variant.color && <p className="text-xs font-semibold text-ink">{variant.color}</p>}
-                    <div className="flex items-center justify-between mt-1">
-                      <p className="text-sm font-bold text-ink">{variant.stock} in stock</p>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button 
-                          onClick={() => handleQuickStockUpdate(product, variant.id, -1)}
-                          className="p-1 hover:bg-bg rounded text-muted hover:text-red-600 transition-colors"
-                          title="Decrease stock"
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <button 
-                          onClick={() => handleQuickStockUpdate(product, variant.id, 1)}
-                          className="p-1 hover:bg-bg rounded text-muted hover:text-emerald-600 transition-colors"
-                          title="Increase stock"
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
+                  <div key={variant.id} className="bg-card p-4 rounded-xl border border-border shadow-sm group relative overflow-hidden flex flex-col justify-between h-full">
+                    <div>
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[10px] font-bold text-muted uppercase">
+                          {product.type === 'SERVICE' ? 'Style / Variant' : (variant.size ? `${variantLabels.size} ${variant.size}` : variantLabels.size)}
+                        </span>
+                        {product.type === 'PRODUCT' && (
+                          <span className={`w-2 h-2 rounded-full ${statusColor} ${isLowStock ? 'animate-pulse' : ''}`} />
+                        )}
                       </div>
+                      {variant.color && <p className="text-sm font-bold text-ink mb-1">{variant.color} {variant.size && product.type === 'SERVICE' ? `(${variant.size}m)` : ''}</p>}
                     </div>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-[9px] text-muted font-medium">Min: {threshold}</span>
-                    </div>
-                    <div className={`mt-2 px-2 py-0.5 rounded text-[9px] font-bold uppercase border text-center ${badgeColor}`}>
-                      {statusLabel}
+
+                    <div className="mt-auto space-y-2">
+                      <div className="flex items-center justify-between">
+                        {product.type === 'SERVICE' ? (
+                          <p className="text-base font-black text-indigo-600">${(variant.price || product.sellingPrice || product.basePrice || 0).toFixed(2)}</p>
+                        ) : (
+                          <p className="text-sm font-bold text-ink">{variant.stock} in stock</p>
+                        )}
+                        {product.type === 'PRODUCT' && (
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button 
+                              onClick={() => handleQuickStockUpdate(product, variant.id, -1)}
+                              className="p-1 hover:bg-bg rounded text-muted hover:text-red-600 transition-colors"
+                              title="Decrease stock"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                            <button 
+                              onClick={() => handleQuickStockUpdate(product, variant.id, 1)}
+                              className="p-1 hover:bg-bg rounded text-muted hover:text-emerald-600 transition-colors"
+                              title="Increase stock"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      {product.type === 'PRODUCT' && (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] text-muted font-medium">Min: {threshold}</span>
+                          </div>
+                          <div className={`px-2 py-1 rounded text-[9px] font-black uppercase border text-center ${badgeColor}`}>
+                            {statusLabel}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 );
@@ -980,9 +1088,37 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
             className="bg-card border border-border rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
           >
             <div className="px-8 py-6 bg-bg border-b border-border flex items-center justify-between">
-              <h3 className="text-xl font-bold text-ink">
-                {editingProduct ? 'Edit Product' : 'Add New Product'}
-              </h3>
+              <div className="flex items-center gap-4">
+                <h3 className="text-xl font-bold text-ink">
+                  {editingProduct ? 'Edit' : 'Add New'} {formData.type === 'SERVICE' ? 'Service' : 'Product'}
+                </h3>
+                {!editingProduct && (
+                  <div className="flex bg-muted p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, type: 'PRODUCT', isService: false, unit: 'pcs' })}
+                      className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        formData.type === 'PRODUCT' 
+                          ? 'bg-card text-indigo-600 shadow-sm' 
+                          : 'text-muted hover:text-ink'
+                      }`}
+                    >
+                      Product
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, type: 'SERVICE', isService: true, unit: 'service' })}
+                      className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        formData.type === 'SERVICE' 
+                          ? 'bg-card text-amber-600 shadow-sm' 
+                          : 'text-muted hover:text-ink'
+                      }`}
+                    >
+                      Service
+                    </button>
+                  </div>
+                )}
+              </div>
               <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-bg rounded-lg transition-colors">
                 <X className="w-5 h-5 text-muted" />
               </button>
@@ -1020,13 +1156,16 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                 </div>
 
                 <div className="col-span-2 space-y-2">
-                  <label className="text-xs font-bold text-muted uppercase">Product Name</label>
+                  <label className="text-xs font-bold text-muted uppercase">
+                    {formData.type === 'SERVICE' ? 'Service Name' : 'Product Name'}
+                  </label>
                   <input
                     required
                     type="text"
-                    className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                    className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
                     value={formData.name || ''}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder={formData.type === 'SERVICE' ? 'e.g. Haircut' : 'e.g. Shampoo'}
                   />
                 </div>
 
@@ -1043,27 +1182,43 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                   </select>
                 </div>
 
-                {/* Business Specific Fields */}
-                {(businessProfile?.type === 'PHARMACY' || businessProfile?.type === 'GROCERY' || businessProfile?.type === 'OTHER') && (
+                {formData.type === 'SERVICE' ? (
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-muted uppercase">Base Duration (Minutes)</label>
+                    <input
+                      type="number"
+                      className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                      value={formData.duration || 0}
+                      onChange={(e) => {
+                      const val = parseInt(e.target.value);
+                      setFormData(prev => ({ ...prev, duration: isNaN(val) ? 0 : val }));
+                    }}
+                    />
+                  </div>
+                ) : (
                   <>
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-muted uppercase">Expiry Date</label>
-                      <input
-                        type="date"
-                        className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                        value={formData.expiryDate || ''}
-                        onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-muted uppercase">Batch Number</label>
-                      <input
-                        type="text"
-                        className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                        value={formData.batchNumber || ''}
-                        onChange={(e) => setFormData({ ...formData, batchNumber: e.target.value })}
-                      />
-                    </div>
+                    {(businessProfile?.type === 'PHARMACY' || businessProfile?.type === 'GROCERY' || businessProfile?.type === 'OTHER') && (
+                      <>
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-muted uppercase">Expiry Date</label>
+                          <input
+                            type="date"
+                            className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                            value={formData.expiryDate || ''}
+                            onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-muted uppercase">Batch Number</label>
+                          <input
+                            type="text"
+                            className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                            value={formData.batchNumber || ''}
+                            onChange={(e) => setFormData({ ...formData, batchNumber: e.target.value })}
+                          />
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
 
@@ -1247,72 +1402,82 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                 )}
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-muted uppercase">Buying Price ($)</label>
-                  <input
-                    required
-                    type="number"
-                    step="0.01"
-                    className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                    value={formData.buyingPrice || 0}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      setFormData({ ...formData, buyingPrice: isNaN(val) ? 0 : val });
-                    }}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-muted uppercase">Selling Price ($)</label>
-                  <input
-                    required
-                    type="number"
-                    step="0.01"
-                    className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                    value={formData.sellingPrice || 0}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      setFormData({ ...formData, sellingPrice: isNaN(val) ? 0 : val, basePrice: isNaN(val) ? 0 : val });
-                    }}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-muted uppercase flex items-center gap-2">
-                    Low Stock Threshold
-                    <Settings className="w-3 h-3 text-muted" />
+                  <label className="text-xs font-bold text-muted uppercase">
+                    {formData.type === 'SERVICE' ? 'Standard Price ($)' : 'Selling Price ($)'}
                   </label>
                   <input
                     required
                     type="number"
+                    step="0.01"
                     className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                    value={formData.lowStockThreshold || 0}
+                    value={formData.sellingPrice === 0 ? '0' : (formData.sellingPrice || '')}
                     onChange={(e) => {
-                      const val = parseInt(e.target.value);
-                      setFormData({ ...formData, lowStockThreshold: isNaN(val) ? 0 : val });
+                      const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                      setFormData(prev => ({ ...prev, sellingPrice: isNaN(val) ? 0 : val, basePrice: isNaN(val) ? 0 : val }));
                     }}
                   />
                 </div>
+
+                {formData.type === 'PRODUCT' && (
+                  <>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-muted uppercase">Buying Price ($)</label>
+                      <input
+                        required
+                        type="number"
+                        step="0.01"
+                        className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                        value={formData.buyingPrice === 0 ? '0' : (formData.buyingPrice || '')}
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                          setFormData(prev => ({ ...prev, buyingPrice: isNaN(val) ? 0 : val }));
+                        }}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-muted uppercase flex items-center gap-2">
+                        Low Stock Threshold
+                        <Settings className="w-3 h-3 text-muted" />
+                      </label>
+                      <input
+                        required
+                        type="number"
+                        className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                        value={formData.lowStockThreshold || 0}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value);
+                          setFormData(prev => ({ ...prev, lowStockThreshold: isNaN(val) ? 0 : val }));
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-ink uppercase tracking-wider">Product Variants</h4>
+                  <h4 className="text-sm font-bold text-ink uppercase tracking-wider">
+                    {formData.type === 'SERVICE' ? 'Service Styles / Options' : 'Product Variants'}
+                  </h4>
                   <div className="flex items-center gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setShowBulkAdd(!showBulkAdd)}
-                      className="flex items-center gap-2 text-xs font-bold text-muted hover:text-ink transition-colors"
-                    >
-                      <Zap className="w-4 h-4" />
-                      Bulk Add
-                    </button>
+                    {formData.type === 'PRODUCT' && (
+                      <button
+                        type="button"
+                        onClick={() => setShowBulkAdd(!showBulkAdd)}
+                        className="flex items-center gap-2 text-xs font-bold text-muted hover:text-ink transition-colors"
+                      >
+                        <Zap className="w-4 h-4" />
+                        Bulk Add
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={addVariant}
                       className="flex items-center gap-2 text-xs font-bold text-indigo-600 hover:text-indigo-700"
                     >
                       <Plus className="w-4 h-4" />
-                      Add Variant
+                      Add {formData.type === 'SERVICE' ? 'Style' : 'Variant'}
                     </button>
                   </div>
                 </div>
@@ -1403,7 +1568,7 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                           </button>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                        <div className={`grid grid-cols-1 ${formData.type === 'SERVICE' ? 'md:grid-cols-3' : 'md:grid-cols-5'} gap-4`}>
                           <div className="space-y-1.5">
                             <label className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
                               <Layers className="w-3 h-3" />
@@ -1412,10 +1577,10 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                             <input
                               required
                               type="text"
-                              className="w-full px-4 py-2.5 bg-card border border-border text-ink rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                              className="w-full px-4 py-2.5 bg-card border border-border text-ink rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
                               value={variant.size}
                               onChange={(e) => updateVariant(variant.id, 'size', e.target.value)}
-                              placeholder="e.g. Large"
+                              placeholder={formData.type === 'SERVICE' ? 'e.g. 30' : 'e.g. Large'}
                             />
                           </div>
                           <div className="space-y-1.5">
@@ -1424,76 +1589,93 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                               {variantLabels.color}
                             </label>
                             <input
-                              required={!isRetail}
+                              required={!isRetail || formData.type === 'SERVICE'}
                               type="text"
-                              className="w-full px-4 py-2.5 bg-card border border-border text-ink rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                              className="w-full px-4 py-2.5 bg-card border border-border text-ink rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
                               value={variant.color}
                               onChange={(e) => updateVariant(variant.id, 'color', e.target.value)}
-                              placeholder={isRetail ? "Optional" : "e.g. Red"}
+                              placeholder={formData.type === 'SERVICE' ? 'e.g. Standard' : (isRetail ? "Optional" : "e.g. Red")}
                             />
                           </div>
+
                           <div className="space-y-1.5">
                             <label className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
                               <Tag className="w-3 h-3" />
-                              Price Override
+                              {formData.type === 'SERVICE' ? 'Style Price ($)' : 'Price Override'}
                             </label>
                             <input
                               type="number"
                               step="0.01"
-                              className="w-full px-4 py-2.5 bg-card border border-border text-ink rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                              value={variant.price || ''}
+                              required={formData.type === 'SERVICE'}
+                              className="w-full px-4 py-2.5 bg-card border border-border text-ink rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono font-bold"
+                              value={variant.price === 0 ? '0' : (variant.price || '')}
                               onChange={(e) => {
-                                const val = parseFloat(e.target.value);
-                                updateVariant(variant.id, 'price', isNaN(val) ? undefined : val);
+                                const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
+                                const priceVal = isNaN(val as number) ? undefined : val;
+                                
+                                setFormData(prev => ({
+                                  ...prev,
+                                  variants: prev.variants.map(v => v.id === variant.id ? { 
+                                    ...v, 
+                                    price: priceVal,
+                                    stock: prev.type === 'SERVICE' ? 1000 : v.stock
+                                  } : v)
+                                }));
                               }}
-                              placeholder="Optional"
+                              placeholder={formData.type === 'SERVICE' ? "Style Price" : "Optional"}
                             />
                           </div>
-                          <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
-                              <Package className="w-3 h-3" />
-                              Stock Level
-                              <span className={`ml-auto text-[8px] font-bold uppercase ${statusColor}`}>
-                                {isOutOfStock ? 'Out' : isLowStock ? 'Low' : 'Good'}
-                              </span>
-                            </label>
-                            <div className="relative">
-                              <input
-                                required
-                                type="number"
-                                className={`w-full px-4 py-2.5 bg-card border ${isLowStock || isOutOfStock ? 'border-amber-500/50' : 'border-border'} text-ink rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all`}
-                                value={variant.stock || 0}
-                                onChange={(e) => {
-                                  const val = parseInt(e.target.value);
-                                  updateVariant(variant.id, 'stock', isNaN(val) ? 0 : val);
-                                }}
-                              />
-                            </div>
-                          </div>
-                          <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
-                              <AlertCircle className="w-3 h-3" />
-                              Min Stock
-                            </label>
-                            <input
-                              type="number"
-                              placeholder={formData.lowStockThreshold.toString()}
-                              className="w-full px-4 py-2.5 bg-card border border-border text-ink rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                              value={variant.lowStockThreshold || ''}
-                              onChange={(e) => {
-                                const val = parseInt(e.target.value);
-                                updateVariant(variant.id, 'lowStockThreshold', isNaN(val) ? undefined : val);
-                              }}
-                            />
-                          </div>
+
+                          {formData.type === 'PRODUCT' && (
+                            <>
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                                  <Package className="w-3 h-3" />
+                                  Stock Level
+                                  <span className={`ml-auto text-[8px] font-bold uppercase ${statusColor}`}>
+                                    {isOutOfStock ? 'Out' : isLowStock ? 'Low' : 'Good'}
+                                  </span>
+                                </label>
+                                <div className="relative">
+                                  <input
+                                    required
+                                    type="number"
+                                    className={`w-full px-4 py-2.5 bg-card border ${isLowStock || isOutOfStock ? 'border-amber-500/50' : 'border-border'} text-ink rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all`}
+                                    value={variant.stock || 0}
+                                    onChange={(e) => {
+                                      const val = parseInt(e.target.value);
+                                      updateVariant(variant.id, 'stock', isNaN(val) ? 0 : val);
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                                  <AlertCircle className="w-3 h-3" />
+                                  Min Stock
+                                </label>
+                                <input
+                                  type="number"
+                                  placeholder={formData.lowStockThreshold.toString()}
+                                  className="w-full px-4 py-2.5 bg-card border border-border text-ink rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                                  value={variant.lowStockThreshold || ''}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value);
+                                    updateVariant(variant.id, 'lowStockThreshold', isNaN(val) ? undefined : val);
+                                  }}
+                                />
+                              </div>
+                            </>
+                          )}
                         </div>
 
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
-                            <Hash className="w-3 h-3" />
-                            SKU / Barcode
-                          </label>
-                          <div className="relative group/sku flex gap-2">
+                        {formData.type === 'PRODUCT' && (
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                              <Hash className="w-3 h-3" />
+                              SKU / Barcode
+                            </label>
+                            <div className="relative group/sku flex gap-2">
                             <div className="relative flex-1">
                               <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted group-focus-within/sku:text-indigo-500 transition-colors">
                                 <Hash className="w-4 h-4" />
@@ -1532,9 +1714,10 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                             )}
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      )}
+                    </div>
+                  );
+                })}
                   {formData.variants.length === 0 && (
                     <div className="p-12 text-center border-2 border-dashed border-border rounded-[32px] text-muted bg-bg/50">
                       <Layers className="w-12 h-12 mx-auto mb-4 opacity-20" />
