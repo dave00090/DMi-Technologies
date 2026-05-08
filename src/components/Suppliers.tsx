@@ -37,7 +37,15 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCreditors, setFilterCreditors] = useState(false);
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
+  const [viewMode, setViewMode] = useState<'CARDS' | 'TABLE'>('CARDS');
   const [newProduct, setNewProduct] = useState('');
+  
+  // Payment Modal State
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [selectedSupplierForPayment, setSelectedSupplierForPayment] = useState<Supplier | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MPESA' | 'CARD'>('CASH');
+  const [paymentReference, setPaymentReference] = useState('');
   
   const [formData, setFormData] = useState<Omit<Supplier, 'id'>>({
     businessId,
@@ -150,18 +158,20 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
 
   const addProduct = () => {
     if (newProduct.trim()) {
-      setFormData({
-        ...formData,
-        suppliedProducts: [...(formData.suppliedProducts || []), newProduct.trim()]
-      });
+      setFormData(prev => ({
+        ...prev,
+        suppliedProducts: [...(prev.suppliedProducts || []), newProduct.trim()]
+      }));
       setNewProduct('');
     }
   };
 
   const removeProduct = (index: number) => {
-    const updated = [...(formData.suppliedProducts || [])];
-    updated.splice(index, 1);
-    setFormData({ ...formData, suppliedProducts: updated });
+    setFormData(prev => {
+      const updated = [...(prev.suppliedProducts || [])];
+      updated.splice(index, 1);
+      return { ...prev, suppliedProducts: updated };
+    });
   };
 
   const filteredSuppliers = suppliers.filter(s => {
@@ -206,6 +216,76 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
     document.body.removeChild(link);
   };
 
+  const handleRecordPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSupplierForPayment || !paymentAmount) return;
+
+    const amount = parseFloat(paymentAmount);
+    if (isNaN(amount) || amount <= 0) {
+      alert('Please enter a valid payment amount');
+      return;
+    }
+
+    if (amount > selectedSupplierForPayment.balance) {
+      if (!confirm(`The payment amount (${amount}) is greater than the balance owed (${selectedSupplierForPayment.balance}). Proceed?`)) {
+        return;
+      }
+    }
+
+    try {
+      const newTotalPaid = selectedSupplierForPayment.totalPaid + amount;
+      const newBalance = selectedSupplierForPayment.totalSupplied - newTotalPaid;
+
+      // 1. Update Supplier
+      await db.updateSupplier(selectedSupplierForPayment.id, {
+        totalPaid: newTotalPaid,
+        balance: newBalance
+      });
+
+      // 2. Add Ledger Entry
+      const currentLedger = await db.getLedger(selectedSupplierForPayment.id, 'SUPPLIER');
+      // Balance in supplier ledger: supplied (credit) - paid (debit) = balance owed
+      // When we PAY, it's a DEBIT to the supplier account, reducing the credit balance (owed)
+      const lastBalance = currentLedger.length > 0 ? currentLedger[currentLedger.length - 1].balanceAfter : selectedSupplierForPayment.balance;
+
+      await db.addLedgerEntry({
+        businessId,
+        entityId: selectedSupplierForPayment.id,
+        entityType: 'SUPPLIER',
+        type: 'DEBIT', // Paying reduces debt
+        amount: amount,
+        balanceAfter: newBalance,
+        description: `Payment to ${selectedSupplierForPayment.name} - ${paymentMethod}${paymentReference ? ` (Ref: ${paymentReference})` : ''}`,
+        timestamp: new Date().toISOString()
+      });
+
+      // 3. Optional: Add as an expense
+      await db.addExpense({
+        businessId,
+        shopId: (db.getActiveShopId() || ''),
+        category: 'SUPPLIER_PAYMENT',
+        amount: amount,
+        description: `Payment to supplier: ${selectedSupplierForPayment.name}`,
+        date: new Date().toISOString().split('T')[0],
+        paymentMethod: paymentMethod,
+        recordedBy: user.name
+      });
+
+      setIsPaymentModalOpen(false);
+      setPaymentAmount('');
+      setPaymentReference('');
+      setSelectedSupplierForPayment(null);
+      
+      const freshSuppliers = await db.getSuppliers(businessId);
+      setSuppliers(freshSuppliers);
+      
+      alert(`Payment of ${formatCurrency(amount)} recorded successfully.`);
+    } catch (err) {
+      console.error('Failed to record payment:', err);
+      alert('Failed to record payment. Please try again.');
+    }
+  };
+
   const formatCurrency = (amount: number | undefined | null) => {
     const currency = businessProfile?.currency || 'KSh';
     if (amount === undefined || amount === null) return `${currency}0`;
@@ -219,7 +299,21 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
           <h2 className="text-2xl font-bold text-ink">Suppliers & Vendors</h2>
           <p className="text-sm text-muted">Manage your supply chain and vendor accounts</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center flex-wrap gap-2">
+          <div className="flex bg-white border border-border p-1 rounded-xl shadow-sm">
+            <button
+              onClick={() => setViewMode('CARDS')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'CARDS' ? 'bg-indigo-600 text-white shadow-md' : 'text-muted hover:bg-muted'}`}
+            >
+              Cards
+            </button>
+            <button
+              onClick={() => setViewMode('TABLE')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'TABLE' ? 'bg-indigo-600 text-white shadow-md' : 'text-muted hover:bg-muted'}`}
+            >
+              Table
+            </button>
+          </div>
           <button
             onClick={() => setFilterCreditors(!filterCreditors)}
             className={`flex items-center gap-2 px-6 py-3 border font-bold rounded-2xl transition-all shadow-sm ${
@@ -307,8 +401,8 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
       </div>
 
       <div className="bg-card border border-border rounded-3xl shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-border">
-          <div className="relative max-w-md">
+        <div className="p-6 border-b border-border flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="relative max-w-md w-full">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted w-5 h-5" />
             <input
               type="text"
@@ -318,12 +412,103 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          <div className="text-xs font-bold text-muted uppercase">
+            Showing {filteredSuppliers.length} of {suppliers.length} vendors
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
-          {filteredSuppliers.map((supplier) => (
-            <div key={supplier.id} className="bg-bg/50 border border-border rounded-3xl p-6 hover:shadow-lg transition-all group">
-              <div className="flex items-start justify-between mb-4">
+        {viewMode === 'TABLE' ? (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-bg text-left border-b border-border">
+                  <th className="px-6 py-4 text-xs font-black text-muted uppercase tracking-widest whitespace-nowrap">Vendor Name</th>
+                  <th className="px-6 py-4 text-xs font-black text-muted uppercase tracking-widest whitespace-nowrap">Category</th>
+                  <th className="px-6 py-4 text-xs font-black text-muted uppercase tracking-widest whitespace-nowrap">Contact</th>
+                  <th className="px-6 py-4 text-xs font-black text-muted uppercase tracking-widest whitespace-nowrap">Supplied</th>
+                  <th className="px-6 py-4 text-xs font-black text-muted uppercase tracking-widest whitespace-nowrap">Balance</th>
+                  <th className="px-6 py-4 text-xs font-black text-muted uppercase tracking-widest whitespace-nowrap">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filteredSuppliers.map((supplier) => (
+                  <tr key={supplier.id} className="hover:bg-muted/30 transition-colors group">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-indigo-600 text-white rounded-lg flex items-center justify-center font-bold text-sm">
+                          {supplier.name.charAt(0)}
+                        </div>
+                        <span className="font-bold text-ink">{supplier.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="px-2 py-1 bg-indigo-500/10 text-indigo-600 text-[10px] font-bold rounded-lg uppercase">
+                        {supplier.category || 'General'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-ink">{supplier.phone}</span>
+                        <span className="text-xs text-muted">{supplier.contactPerson}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 font-bold text-sm text-ink">
+                      {formatCurrency(supplier.totalSupplied)}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`font-black text-sm ${supplier.balance > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                        {formatCurrency(supplier.balance)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {supplier.balance > 0 && (
+                          <button 
+                            onClick={() => {
+                              setSelectedSupplierForPayment(supplier);
+                              setPaymentAmount(supplier.balance.toString());
+                              setIsPaymentModalOpen(true);
+                            }}
+                            className="p-1.5 text-emerald-600 hover:bg-emerald-500/10 rounded-lg transition-all"
+                            title="Record Payment"
+                          >
+                            <DollarSign className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button 
+                          onClick={() => onViewLedger(supplier.id)}
+                          className="p-1.5 text-indigo-600 hover:bg-indigo-500/10 rounded-lg transition-all"
+                          title="View Ledger"
+                        >
+                          <BookOpen className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleEdit(supplier)}
+                          className="p-1.5 text-indigo-600 hover:bg-indigo-600/10 rounded-lg transition-all"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setSupplierToDelete(supplier.id);
+                            setIsDeleteConfirmOpen(true);
+                          }}
+                          className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
+            {filteredSuppliers.map((supplier) => (
+              <div key={supplier.id} className="bg-bg/50 border border-border rounded-3xl p-6 hover:shadow-lg transition-all group">
+                <div className="flex items-start justify-between mb-4">
                 <div className="w-12 h-12 bg-indigo-600 text-white rounded-2xl flex items-center justify-center font-bold text-xl shadow-lg">
                   {supplier.name.charAt(0)}
                 </div>
@@ -387,6 +572,19 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
               </div>
 
               <div className="flex gap-2">
+                {supplier.balance > 0 && (
+                  <button 
+                    onClick={() => {
+                      setSelectedSupplierForPayment(supplier);
+                      setPaymentAmount(supplier.balance.toString());
+                      setIsPaymentModalOpen(true);
+                    }}
+                    className="flex-1 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20"
+                  >
+                    <DollarSign className="w-3 h-3" />
+                    Pay
+                  </button>
+                )}
                 <button 
                   onClick={() => onViewLedger(supplier.id)}
                   className="flex-1 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
@@ -418,7 +616,109 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
             </div>
           )}
         </div>
-      </div>
+      )}
+    </div>
+
+      {/* Record Payment Modal */}
+      {isPaymentModalOpen && selectedSupplierForPayment && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-card border border-border rounded-3xl w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-border flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-ink">Record Payment</h3>
+                <p className="text-xs text-muted font-bold uppercase mt-1">To: {selectedSupplierForPayment.name}</p>
+              </div>
+              <button 
+                onClick={() => {
+                  setIsPaymentModalOpen(false);
+                  setSelectedSupplierForPayment(null);
+                }} 
+                className="text-muted hover:text-ink w-8 h-8 flex items-center justify-center bg-bg rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleRecordPayment} className="p-6 space-y-6">
+              <div className="p-4 bg-rose-500/5 border border-rose-500/20 rounded-2xl">
+                <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Current Balance Owed</p>
+                <p className="text-2xl font-black text-rose-500">{formatCurrency(selectedSupplierForPayment.balance)}</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-muted uppercase tracking-wider">Payment Amount</label>
+                  <div className="relative">
+                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted font-bold">
+                      {businessProfile?.currency || 'KSh'}
+                    </div>
+                    <input
+                      type="number"
+                      required
+                      step="0.01"
+                      className="w-full pl-14 pr-4 py-3 bg-bg border border-border text-ink rounded-2xl text-lg font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                      value={paymentAmount}
+                      onChange={(e) => setPaymentAmount(e.target.value)}
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-muted uppercase tracking-wider">Payment Method</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {['CASH', 'MPESA', 'CARD'].map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setPaymentMethod(m as any)}
+                        className={`py-2 text-[10px] font-black rounded-xl border transition-all ${
+                          paymentMethod === m 
+                            ? 'bg-emerald-600 border-emerald-600 text-white shadow-md' 
+                            : 'bg-white border-border text-muted hover:bg-muted'
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-muted uppercase tracking-wider">Reference (Optional)</label>
+                  <input
+                    type="text"
+                    className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-medium"
+                    value={paymentReference}
+                    onChange={(e) => setPaymentReference(e.target.value)}
+                    placeholder="e.g. M-Pesa Ref or Check No."
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPaymentModalOpen(false);
+                    setSelectedSupplierForPayment(null);
+                  }}
+                  className="flex-1 py-3 border border-border text-ink font-bold rounded-2xl hover:bg-muted transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-[2] py-3 bg-emerald-600 text-white font-bold rounded-2xl shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2"
+                >
+                  <DollarSign className="w-5 h-5" />
+                  Record Payment
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Add/Edit Supplier Modal */}
       {isModalOpen && (
@@ -481,12 +781,15 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-xs font-bold text-muted uppercase">Email Address</label>
+                      <label className="text-xs font-bold text-muted uppercase flex items-center justify-between">
+                        Email Address
+                        <span className="text-[10px] lowercase normal-case opacity-50 font-normal italic">Optional</span>
+                      </label>
                       <input
                         type="email"
                         className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
                         value={formData.email || ''}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
                         placeholder="vendor@example.com"
                       />
                     </div>
@@ -515,7 +818,7 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
                           value={formData.totalSupplied || 0}
                           onChange={(e) => {
                             const val = parseFloat(e.target.value);
-                            setFormData({ ...formData, totalSupplied: isNaN(val) ? 0 : val });
+                            setFormData(prev => ({ ...prev, totalSupplied: isNaN(val) ? 0 : val }));
                           }}
                         />
                       </div>
@@ -527,7 +830,7 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
                           value={formData.totalPaid || 0}
                           onChange={(e) => {
                             const val = parseFloat(e.target.value);
-                            setFormData({ ...formData, totalPaid: isNaN(val) ? 0 : val });
+                            setFormData(prev => ({ ...prev, totalPaid: isNaN(val) ? 0 : val }));
                           }}
                         />
                       </div>

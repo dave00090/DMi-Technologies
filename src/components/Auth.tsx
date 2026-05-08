@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { localAuth } from '../services/localAuth';
 import { UserProfile, Role } from '../types';
-import { LogIn, LogOut, User as UserIcon, Shield, Loader2, Lock, UserPlus, X, Chrome } from 'lucide-react';
+import { LogIn, LogOut, User as UserIcon, Shield, Loader2, Lock, UserPlus, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 import { SYSTEM_LOGO_URL } from '../constants';
