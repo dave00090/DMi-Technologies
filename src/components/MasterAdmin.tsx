@@ -98,7 +98,7 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
         
         // Fix health status logic: only 'ok' if no error
         const salesStatus = salesError 
-          ? (salesError.message.includes('not found') ? 'missing' : 'missing') 
+          ? 'missing' 
           : 'ok';
         health.push({ table: 'sales', status: salesStatus });
         
@@ -117,7 +117,7 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
       if (currentSales.length === 0 && licenseData && licenseData.length > 0) {
         currentSales = licenseData.map(l => ({
           id: l.id,
-          amount: Number(l.license_fee || 0),
+          total: Number(l.license_fee || 0),
           client_name: l.client_name,
           category: 'LICENSE_FEE',
           timestamp: l.created_at,
@@ -136,9 +136,9 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
           if (!sDate) return false;
           return new Date(sDate).toDateString() === todayDateStr;
         })
-        .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+        .reduce((sum, s) => sum + (Number(s.total) || 0), 0);
         
-      const totalRev = currentSales.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+      const totalRev = currentSales.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
 
       // Calculate Growth (Month-over-month)
       const thisMonthStr = now.toISOString().slice(0, 7);
@@ -148,11 +148,11 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
       
       const thisMonthSales = currentSales
         .filter(s => (s.timestamp || s.created_at)?.startsWith(thisMonthStr))
-        .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+        .reduce((sum, s) => sum + (Number(s.total) || 0), 0);
         
       const lastMonthSales = currentSales
         .filter(s => (s.timestamp || s.created_at)?.startsWith(lastMonthStr))
-        .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+        .reduce((sum, s) => sum + (Number(s.total) || 0), 0);
       
       let growth = 0;
       if (lastMonthSales > 0) {
@@ -267,11 +267,13 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
         try {
           const { error: saleError } = await supabase.from('sales').insert({
             id: crypto.randomUUID(),
-            amount: Number(fee),
+            total: Number(fee),
+            items: [{ name: 'License Purchase', quantity: 1, price: Number(fee) }],
+            cashier_id: 'MASTER_ADMIN',
+            cashier_name: 'DMi Admin',
             client_name: clientName,
-            category: 'LICENSE_FEE',
-            timestamp: new Date().toISOString(),
-            created_at: new Date().toISOString()
+            payment_method: 'CASH',
+            timestamp: new Date().toISOString()
           });
           
           if (saleError) {
@@ -653,9 +655,9 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                          <tr key={sale.id} className="group">
                            <td className="py-4 font-bold text-sm text-slate-300">{sale.client_name}</td>
                            <td className="py-4 text-[10px] font-black uppercase text-indigo-400/70 tracking-widest">
-                             {sale.category || 'License Fee'}
+                             {sale.payment_method || 'License Fee'}
                            </td>
-                           <td className="py-4 font-black text-slate-100">{formatCurrency(sale.amount || 0)}</td>
+                           <td className="py-4 font-black text-slate-100">{formatCurrency(sale.total || 0)}</td>
                            <td className="py-4 text-xs text-slate-500">
                              { (sale.timestamp || sale.created_at) ? format(new Date(sale.timestamp || sale.created_at), 'MMM dd, HH:mm') : '---' }
                            </td>

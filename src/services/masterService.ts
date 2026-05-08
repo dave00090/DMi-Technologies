@@ -165,15 +165,15 @@ export const masterService = {
   resetClientData: async (identifier: string) => {
     if (!identifier) return { error: 'Identifier required' };
     
-    // Clean up sales, expenses, etc. using the unique business_id or client_name
-    // business_id is the primary uuid, client_name is the fallback
-    const tables = ['sales', 'expenses', 'debts', 'ledger_entries'];
+    // Clean up sales, expenses, etc. using the unique business_id
+    const tables = ['sales', 'expenses', 'debts', 'ledger_entries', 'inventory_logs', 'products'];
     const results = await Promise.all(tables.map(async (table) => {
       try {
+        // We try to catch potential missing column errors gracefully 
         const { error } = await supabase
           .from(table)
           .delete()
-          .or(`business_id.eq.${identifier},client_name.eq.${identifier}`);
+          .eq('business_id', identifier);
         
         if (error) {
           // If table or column doesn't exist, treat as success or warning (nothing to delete)
@@ -225,12 +225,12 @@ export const masterService = {
   // Admin Controls (For DMi Technologies)
   getGlobalDashboard: async () => {
     const { data: licenses } = await supabase.from('licenses').select('*');
-    const { data: revenue } = await supabase.from('sales').select('amount');
+    const { data: revenue } = await supabase.from('sales').select('total');
     
     return {
       totalClients: licenses?.length || 0,
       activeClients: licenses?.filter(l => l.status === 'ACTIVE').length || 0,
-      totalRevenue: revenue?.reduce((sum, r) => sum + r.amount, 0) || 0,
+      totalRevenue: revenue?.reduce((sum, r) => sum + (Number(r.total) || 0), 0) || 0,
     };
   }
 };

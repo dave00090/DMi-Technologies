@@ -73,13 +73,37 @@ export const Ledger: React.FC<LedgerProps> = ({ businessId, user, initialSelecti
           setSelectedEntity(entity);
         }
         onClearSelection?.();
-      } else if (!initialSelection) {
+      } else if (!initialSelection && !selectedEntity) {
         setSelectedEntity(null);
         setLedgerEntries([]);
         setActiveDebts([]);
+      } else if (selectedEntity) {
+        // Refresh selected entity data if it has changed
+        const refreshed = currentEntities.find(e => e.id === selectedEntity.id);
+        if (refreshed) {
+          setSelectedEntity(refreshed);
+        } else {
+          setSelectedEntity(null);
+        }
       }
     };
     fetchData();
+
+    const handleUpdate = (e: any) => {
+      const relevantKeys = ['dmi_pos_customers', 'dmi_pos_suppliers', 'dmi_pos_debts', 'dmi_pos_ledger', 'dmi_pos_businesses'];
+      if (relevantKeys.includes(e.detail?.key)) {
+        fetchData();
+        fetchLedger();
+      }
+    };
+
+    window.addEventListener('local-db-update', handleUpdate);
+    window.addEventListener('storage-sync', handleUpdate);
+
+    return () => {
+      window.removeEventListener('local-db-update', handleUpdate);
+      window.removeEventListener('storage-sync', handleUpdate);
+    };
   }, [activeTab, businessId, initialSelection]);
 
   useEffect(() => {
@@ -334,24 +358,54 @@ export const Ledger: React.FC<LedgerProps> = ({ businessId, user, initialSelecti
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 border-b border-border">
-                <div className="p-6 border-r border-border">
-                  <p className="text-[10px] font-bold text-muted uppercase mb-1">Total Transactions</p>
-                  <p className="text-2xl font-bold text-ink">{ledgerEntries.length}</p>
+              {activeTab === 'SUPPLIER' && selectedEntity ? (
+                <div className="grid grid-cols-1 md:grid-cols-4 border-b border-border bg-muted/5">
+                  <div className="p-6 border-r border-border bg-emerald-500/[0.03]">
+                    <p className="text-[10px] font-black text-emerald-600 uppercase tracking-tighter mb-1">Total Supplied</p>
+                    <p className="text-2xl font-black text-ink">
+                      {formatCurrency((selectedEntity as Supplier).totalSupplied)}
+                    </p>
+                  </div>
+                  <div className="p-6 border-r border-border bg-indigo-500/[0.03]">
+                    <p className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter mb-1">Total Paid</p>
+                    <p className="text-2xl font-black text-ink">
+                      {formatCurrency((selectedEntity as Supplier).totalPaid)}
+                    </p>
+                  </div>
+                  <div className="p-6 border-r border-border bg-rose-500/[0.03]">
+                    <p className="text-[10px] font-black text-rose-600 uppercase tracking-tighter mb-1">Balance Owed</p>
+                    <p className="text-2xl font-black text-rose-600">
+                      {formatCurrency((selectedEntity as Supplier).balance)}
+                    </p>
+                  </div>
+                  <div className="p-6 bg-bg/50">
+                    <p className="text-[10px] font-black text-muted uppercase tracking-tighter mb-1">Active Ledger</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <p className="text-xs font-bold text-ink whitespace-nowrap">Auto-synced Account</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="p-6 border-r border-border">
-                  <p className="text-[10px] font-bold text-muted uppercase mb-1">Total Debits</p>
-                  <p className="text-2xl font-bold text-rose-500">
-                    {formatCurrency(ledgerEntries.filter(e => e.type === 'DEBIT').reduce((sum, e) => sum + e.amount, 0))}
-                  </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 border-b border-border">
+                  <div className="p-6 border-r border-border">
+                    <p className="text-[10px] font-bold text-muted uppercase mb-1">Total Transactions</p>
+                    <p className="text-2xl font-bold text-ink">{ledgerEntries.length}</p>
+                  </div>
+                  <div className="p-6 border-r border-border">
+                    <p className="text-[10px] font-bold text-muted uppercase mb-1">Total Debits</p>
+                    <p className="text-2xl font-bold text-rose-500">
+                      {formatCurrency(ledgerEntries.filter(e => e.type === 'DEBIT').reduce((sum, e) => sum + e.amount, 0))}
+                    </p>
+                  </div>
+                  <div className="p-6">
+                    <p className="text-[10px] font-bold text-muted uppercase mb-1">Total Credits</p>
+                    <p className="text-2xl font-bold text-emerald-500">
+                      {formatCurrency(ledgerEntries.filter(e => e.type === 'CREDIT').reduce((sum, e) => sum + e.amount, 0))}
+                    </p>
+                  </div>
                 </div>
-                <div className="p-6">
-                  <p className="text-[10px] font-bold text-muted uppercase mb-1">Total Credits</p>
-                  <p className="text-2xl font-bold text-emerald-500">
-                    {formatCurrency(ledgerEntries.filter(e => e.type === 'CREDIT').reduce((sum, e) => sum + e.amount, 0))}
-                  </p>
-                </div>
-              </div>
+              )}
 
               <div className="flex-1 overflow-y-auto">
                 {activeTab === 'CUSTOMER' && activeDebts.length > 0 && (

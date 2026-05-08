@@ -98,16 +98,79 @@ export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLe
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingSupplier) {
-      await db.updateSupplier(editingSupplier.id, formData);
-    } else {
-      await db.addSupplier(formData);
+    try {
+      if (editingSupplier) {
+        // Calculate differences for ledger entries if balances were manually adjusted
+        const suppliedDiff = formData.totalSupplied - editingSupplier.totalSupplied;
+        const paidDiff = formData.totalPaid - editingSupplier.totalPaid;
+
+        await db.updateSupplier(editingSupplier.id, formData);
+
+        if (suppliedDiff !== 0) {
+          await db.addLedgerEntry({
+            businessId,
+            entityId: editingSupplier.id,
+            entityType: 'SUPPLIER',
+            type: suppliedDiff > 0 ? 'CREDIT' : 'DEBIT',
+            amount: Math.abs(suppliedDiff),
+            balanceAfter: formData.balance,
+            description: `Manual adjustment of supplied amount${suppliedDiff > 0 ? ' (Increase)' : ' (Decrease)'}`,
+            timestamp: new Date().toISOString()
+          });
+        }
+
+        if (paidDiff !== 0) {
+          await db.addLedgerEntry({
+            businessId,
+            entityId: editingSupplier.id,
+            entityType: 'SUPPLIER',
+            type: paidDiff > 0 ? 'DEBIT' : 'CREDIT',
+            amount: Math.abs(paidDiff),
+            balanceAfter: formData.balance,
+            description: `Manual adjustment of paid amount${paidDiff > 0 ? ' (Increase)' : ' (Decrease)'}`,
+            timestamp: new Date().toISOString()
+          });
+        }
+      } else {
+        const newSupplier = await db.addSupplier(formData);
+        
+        // Add initial ledger entries if they have starting balances
+        if (formData.totalSupplied > 0) {
+          await db.addLedgerEntry({
+            businessId,
+            entityId: newSupplier.id,
+            entityType: 'SUPPLIER',
+            type: 'CREDIT',
+            amount: formData.totalSupplied,
+            balanceAfter: formData.totalSupplied,
+            description: 'Opening balance (Total Supplied)',
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        if (formData.totalPaid > 0) {
+          await db.addLedgerEntry({
+            businessId,
+            entityId: newSupplier.id,
+            entityType: 'SUPPLIER',
+            type: 'DEBIT',
+            amount: formData.totalPaid,
+            balanceAfter: formData.totalSupplied - formData.totalPaid,
+            description: 'Opening balance (Total Paid)',
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
+      
+      const freshSuppliers = await db.getSuppliers(businessId);
+      setSuppliers(freshSuppliers);
+      setIsModalOpen(false);
+      setEditingSupplier(null);
+      resetForm();
+    } catch (err) {
+      console.error('Failed to save supplier:', err);
+      alert('Failed to save supplier details. Please try again.');
     }
-    const freshSuppliers = await db.getSuppliers(businessId);
-    setSuppliers(freshSuppliers);
-    setIsModalOpen(false);
-    setEditingSupplier(null);
-    resetForm();
   };
 
   const resetForm = () => {
