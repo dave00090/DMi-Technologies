@@ -41,7 +41,13 @@ export default function App() {
   const [activeBusinessId, setActiveBusinessId] = useState<string | null>(localDb.getActiveBusinessId());
   const [activeShopId, setActiveShopId] = useState<string | null>(localDb.getActiveShopId());
   const [activeTab, setActiveTab] = useState('pos');
-  const [zoomLevel, setZoomLevel] = useState<number>(parseFloat(localStorage.getItem('dmi_pos_zoom_level') || '1'));
+  const [zoomLevel, setZoomLevel] = useState<number>(() => {
+    try {
+      return parseFloat(localStorage.getItem('dmi_pos_zoom_level') || '1');
+    } catch (e) {
+      return 1;
+    }
+  });
   const [ledgerSelection, setLedgerSelection] = useState<{ id: string, type: 'CUSTOMER' | 'SUPPLIER' } | null>(null);
   const [businessUpdateCounter, setBusinessUpdateCounter] = useState(0);
 
@@ -169,7 +175,9 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.style.setProperty('--app-zoom', zoomLevel.toString());
-    localStorage.setItem('dmi_pos_zoom_level', zoomLevel.toString());
+    try {
+      localStorage.setItem('dmi_pos_zoom_level', zoomLevel.toString());
+    } catch (e) {}
   }, [zoomLevel]);
 
   useEffect(() => {

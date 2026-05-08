@@ -69,12 +69,18 @@ export const masterService = {
         const isNotFoundError = error && (error.code === 'PGRST116' || error.message?.includes('0 rows'));
         
         if (isNotFoundError) {
-          localStorage.removeItem(cacheKey);
+          try {
+            localStorage.removeItem(cacheKey);
+          } catch (e) {}
           return { success: false, message: 'License Revoked/Deleted', isLocked: true };
         }
 
         // Check offline cache for genuine connection errors
-        const cached = localStorage.getItem(cacheKey);
+        let cached = null;
+        try {
+          cached = localStorage.getItem(cacheKey);
+        } catch (e) {}
+
         if (cached) {
           try {
             const decrypted = JSON.parse(atob(cached));
@@ -109,16 +115,24 @@ export const masterService = {
       }).eq('id', data.id);
 
       // Save to offline cache
-      localStorage.setItem(cacheKey, btoa(JSON.stringify({
-        timestamp: new Date().toISOString(),
-        gracePeriod: data.grace_period_days || OFFLINE_GRACE_DAYS,
-        data: data
-      })));
+      try {
+        localStorage.setItem(cacheKey, btoa(JSON.stringify({
+          timestamp: new Date().toISOString(),
+          gracePeriod: data.grace_period_days || OFFLINE_GRACE_DAYS,
+          data: data
+        })));
+      } catch (e) {
+        console.warn('Failed to cache license locally (quota exceeded)');
+      }
 
       return { success: true, data };
     } catch (err) {
       // Fail-over to cache on network error
-      const cached = localStorage.getItem(cacheKey);
+      let cached = null;
+      try {
+        cached = localStorage.getItem(cacheKey);
+      } catch (e) {}
+      
       if (cached) {
         try {
           const decrypted = JSON.parse(atob(cached));

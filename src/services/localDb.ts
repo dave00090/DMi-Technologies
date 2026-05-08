@@ -159,45 +159,66 @@ export async function setLocal<Value>(key: string, data: Value): Promise<void> {
     console.error(`Failed to save ${key} to IndexedDB:`, e);
   }
 
+  // Safety wrapper for localStorage to prevent unhandled rejections
+  const safeSetItem = (k: string, v: string) => {
+    try {
+      localStorage.setItem(k, v);
+      return true;
+    } catch (e: any) {
+      if (e.name === 'QuotaExceededError' || 
+          e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || 
+          e.code === 22 || 
+          e.code === 1014) {
+        console.warn('LocalStorage quota exceeded, could not set key:', k);
+        return false;
+      }
+      console.error('Failed to setItem in localStorage:', e);
+      return false;
+    }
+  };
+
   try {
     const processedData = await offloadLargeFields(data, key);
     const stringified = JSON.stringify(processedData);
     
     // Only save to localStorage if it's reasonably small (under 100KB)
+    let success = false;
     if (stringified.length < 100000) {
-      localStorage.setItem(key, stringified);
+      success = safeSetItem(key, stringified);
     } else {
-      localStorage.setItem(key, '__idb_ref__');
+      success = safeSetItem(key, '__idb_ref__');
     }
-  } catch (e: any) {
-    if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
-      console.warn('Storage quota exceeded. Using IndexedDB reference for:', key);
-      localStorage.setItem(key, '__idb_ref__');
-      
-      // Aggressive cleanup of other keys if needed
+
+    if (!success) {
+      // If setting the actual data or ref failed, try aggressive cleanup
       const usage: Record<string, number> = {};
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         if (k) usage[k] = (localStorage.getItem(k) || '').length;
       }
-      console.table(usage);
-
+      
       const keysToClear = [
         STORAGE_KEYS.ALERTS,
         STORAGE_KEYS.LOGIN_HISTORY,
         STORAGE_KEYS.LEDGER,
         STORAGE_KEYS.ATTENDANCE,
-        STORAGE_KEYS.EXPENSES
+        STORAGE_KEYS.EXPENSES,
+        STORAGE_KEYS.SALES // Sales can be very large
       ];
 
-      keysToClear.forEach(k => {
-        if (k !== key) {
-          localStorage.setItem(k, '__idb_ref__');
+      // Convert large entries to refs one by one to free up space
+      for (const k of keysToClear) {
+        if (k !== key && localStorage.getItem(k) !== '__idb_ref__' && localStorage.getItem(k) !== null) {
+          safeSetItem(k, '__idb_ref__');
         }
-      });
-    } else {
-      localStorage.setItem(key, '__idb_ref__');
+      }
+      
+      // Try one last time to set the reference
+      safeSetItem(key, '__idb_ref__');
     }
+  } catch (e) {
+    console.error(`Failed to process data for ${key} in setLocal:`, e);
+    safeSetItem(key, '__idb_ref__');
   }
 
   // Dispatch global sync event for in-tab listeners
@@ -604,15 +625,35 @@ export const localDb = {
   },
 
   // Active State
-  getActiveBusinessId: (): string | null => localStorage.getItem(STORAGE_KEYS.ACTIVE_BUSINESS_ID),
-  setActiveBusinessId: (id: string | null) => {
-    if (id) localStorage.setItem(STORAGE_KEYS.ACTIVE_BUSINESS_ID, id);
-    else localStorage.removeItem(STORAGE_KEYS.ACTIVE_BUSINESS_ID);
+  getActiveBusinessId: (): string | null => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.ACTIVE_BUSINESS_ID);
+    } catch (e) {
+      return null;
+    }
   },
-  getActiveShopId: (): string | null => localStorage.getItem(STORAGE_KEYS.ACTIVE_SHOP_ID),
+  setActiveBusinessId: (id: string | null) => {
+    try {
+      if (id) localStorage.setItem(STORAGE_KEYS.ACTIVE_BUSINESS_ID, id);
+      else localStorage.removeItem(STORAGE_KEYS.ACTIVE_BUSINESS_ID);
+    } catch (e) {
+      console.warn('Failed to set active business ID in localStorage');
+    }
+  },
+  getActiveShopId: (): string | null => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.ACTIVE_SHOP_ID);
+    } catch (e) {
+      return null;
+    }
+  },
   setActiveShopId: (id: string | null) => {
-    if (id) localStorage.setItem(STORAGE_KEYS.ACTIVE_SHOP_ID, id);
-    else localStorage.removeItem(STORAGE_KEYS.ACTIVE_SHOP_ID);
+    try {
+      if (id) localStorage.setItem(STORAGE_KEYS.ACTIVE_SHOP_ID, id);
+      else localStorage.removeItem(STORAGE_KEYS.ACTIVE_SHOP_ID);
+    } catch (e) {
+      console.warn('Failed to set active shop ID in localStorage');
+    }
   },
 
   // Reporting Helpers
