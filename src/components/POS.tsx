@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Receipt } from './Receipt';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { BarcodeScanner } from './BarcodeScanner';
 import { useHardwareScanner } from '../hooks/useHardwareScanner';
 import { PaymentMethod } from '../types';
@@ -174,7 +174,16 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
       const variant = product.variants.find(v => v.sku === barcode);
       if (variant) {
         addToCart(product, variant);
+        setSearchTerm(''); // Clear search if a scan happens
+        setSuccess(`Added to cart: ${product.name}`);
+        setTimeout(() => setSuccess(null), 2000);
+        
+        // Optional: play scan sound if we had an asset, for now just visual feedback
       }
+    } else {
+      // If we are in POS and a scan happens but no product found
+      setError(`No product found for barcode: ${barcode}`);
+      setTimeout(() => setError(null), 3000);
     }
   };
 
@@ -586,6 +595,11 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
                 className="w-full pl-12 pr-4 py-3 bg-white border-2 border-indigo-400 text-slate-800 rounded-xl shadow-sm focus:ring-0 transition-all outline-none text-sm font-bold placeholder:text-slate-400"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && searchTerm) {
+                    handleBarcodeScan(searchTerm);
+                  }
+                }}
                 autoFocus
               />
               
@@ -654,6 +668,15 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
               <Camera className="w-4 h-4" />
               <span className="text-xs font-black uppercase tracking-widest">SCAN</span>
             </button>
+            {lastSale && (
+              <button
+                onClick={() => setShowReceipt(true)}
+                className="px-4 py-2 bg-white text-slate-600 border border-slate-200 rounded-lg shadow-sm hover:bg-slate-50 transition-all flex items-center gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                <span className="text-xs font-black uppercase tracking-widest">LAST RECEIPT</span>
+              </button>
+            )}
           </div>
 
           <div className="flex items-center justify-end gap-3 mt-4 md:mt-0">

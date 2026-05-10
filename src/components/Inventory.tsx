@@ -666,6 +666,11 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
             placeholder="Search products, categories, or SKU..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && searchTerm) {
+                handleBarcodeScan(searchTerm);
+              }
+            }}
             className="w-full pl-12 pr-4 py-3.5 bg-card border border-border rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium shadow-sm transition-all"
           />
         </div>
