@@ -169,55 +169,37 @@ export async function setLocal<Value>(key: string, data: Value): Promise<void> {
           e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || 
           e.code === 22 || 
           e.code === 1014) {
-        console.warn('LocalStorage quota exceeded, could not set key:', k);
+        // Silently fail for localStorage if quota is reached
+        // We still have IndexedDB as the source of truth
         return false;
       }
-      console.error('Failed to setItem in localStorage:', e);
       return false;
     }
   };
 
   try {
+    const isLargeData = key === STORAGE_KEYS.SALES || 
+                       key === STORAGE_KEYS.PRODUCTS || 
+                       key === STORAGE_KEYS.LEDGER || 
+                       key.startsWith('pos_cart_');
+
     const processedData = await offloadLargeFields(data, key);
     const stringified = JSON.stringify(processedData);
     
-    // Only save to localStorage if it's reasonably small (under 100KB)
+    // If it's a known large data key or the stringified result is > 50KB, 
+    // prefer saving just a reference to localStorage to avoid quota issues
     let success = false;
-    if (stringified.length < 100000) {
+    if (!isLargeData && stringified.length < 50000) {
       success = safeSetItem(key, stringified);
     } else {
       success = safeSetItem(key, '__idb_ref__');
     }
 
     if (!success) {
-      // If setting the actual data or ref failed, try aggressive cleanup
-      const usage: Record<string, number> = {};
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k) usage[k] = (localStorage.getItem(k) || '').length;
-      }
-      
-      const keysToClear = [
-        STORAGE_KEYS.ALERTS,
-        STORAGE_KEYS.LOGIN_HISTORY,
-        STORAGE_KEYS.LEDGER,
-        STORAGE_KEYS.ATTENDANCE,
-        STORAGE_KEYS.EXPENSES,
-        STORAGE_KEYS.SALES // Sales can be very large
-      ];
-
-      // Convert large entries to refs one by one to free up space
-      for (const k of keysToClear) {
-        if (k !== key && localStorage.getItem(k) !== '__idb_ref__' && localStorage.getItem(k) !== null) {
-          safeSetItem(k, '__idb_ref__');
-        }
-      }
-      
-      // Try one last time to set the reference
+      // If setting the actual data failed, try setting the reference
       safeSetItem(key, '__idb_ref__');
     }
   } catch (e) {
-    console.error(`Failed to process data for ${key} in setLocal:`, e);
     safeSetItem(key, '__idb_ref__');
   }
 

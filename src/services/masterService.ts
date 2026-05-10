@@ -122,7 +122,7 @@ export const masterService = {
           data: data
         })));
       } catch (e) {
-        console.warn('Failed to cache license locally (quota exceeded)');
+        // Silently fail if quota exceeded
       }
 
       return { success: true, data };
