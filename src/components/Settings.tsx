@@ -378,6 +378,68 @@ export const Settings: React.FC<SettingsProps> = ({ user, businessId, shopId, on
             </div>
           </div>
         </div>
+
+        <div className="mt-8 pt-8 border-t border-border">
+          <div className="flex items-center gap-3 mb-6">
+            <Globe className="w-5 h-5 text-indigo-600" />
+            <h3 className="text-lg font-bold text-ink">Daraja API Configuration (STK Push)</h3>
+          </div>
+          <p className="text-sm text-muted mb-6">
+            Enter your Safaricom Daraja API credentials to enable real-time payment prompts (STK Push). 
+            You can get these from the <a href="https://developer.safaricom.co.ke/" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">Daraja Portal</a>.
+          </p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-bold text-ink opacity-70 mb-2">Consumer Key</label>
+              <input
+                type="password"
+                value={businessProfile.mpesaConfig?.consumerKey || ''}
+                onChange={(e) => handleUpdateBusiness({ 
+                  mpesaConfig: { ...businessProfile.mpesaConfig, consumerKey: e.target.value.trim() } 
+                })}
+                className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-ink focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-xs"
+                placeholder="Your Daraja Consumer Key"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-ink opacity-70 mb-2">Consumer Secret</label>
+              <input
+                type="password"
+                value={businessProfile.mpesaConfig?.consumerSecret || ''}
+                onChange={(e) => handleUpdateBusiness({ 
+                  mpesaConfig: { ...businessProfile.mpesaConfig, consumerSecret: e.target.value.trim() } 
+                })}
+                className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-ink focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-xs"
+                placeholder="Your Daraja Consumer Secret"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-ink opacity-70 mb-2">Passkey</label>
+              <input
+                type="password"
+                value={businessProfile.mpesaConfig?.passkey || ''}
+                onChange={(e) => handleUpdateBusiness({ 
+                  mpesaConfig: { ...businessProfile.mpesaConfig, passkey: e.target.value.trim() } 
+                })}
+                className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-ink focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-xs"
+                placeholder="LNM Online Passkey"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-ink opacity-70 mb-2">Short Code (Till/Paybill)</label>
+              <input
+                type="text"
+                value={businessProfile.mpesaConfig?.shortCode || ''}
+                onChange={(e) => handleUpdateBusiness({ 
+                  mpesaConfig: { ...businessProfile.mpesaConfig, shortCode: e.target.value.trim() } 
+                })}
+                className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-ink focus:ring-2 focus:ring-indigo-500 outline-none"
+                placeholder="174379 (for Sandbox)"
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="bg-card border border-border rounded-3xl p-8 shadow-sm">

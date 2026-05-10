@@ -567,6 +567,7 @@ export const localDb = {
       customerId: debt.customerId,
       customerName: customer.name,
       paymentMethod: 'CASH', // Payment received in cash
+      status: 'COMPLETED',
     };
     const newSale = await localDb.addSale(sale);
 

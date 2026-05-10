@@ -85,7 +85,83 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
   const [mpesaStatus, setMpesaStatus] = useState<'IDLE' | 'WAITING' | 'CONFIRMED' | 'FAILED'>('IDLE');
   const [mpesaConfirmation, setMpesaConfirmation] = useState<string | null>(null);
   const [mpesaPhone, setMpesaPhone] = useState('');
+  const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(null);
+  const [isStkLoading, setIsStkLoading] = useState(false);
   const [selectedMpesaMethod, setSelectedMpesaMethod] = useState<'SEND_MONEY' | 'POCHI' | 'PAYBILL' | 'TILL' | null>(null);
+
+  // Poll for M-Pesa transaction status
+  useEffect(() => {
+    let pollInterval: NodeJS.Timeout;
+
+    if (checkoutRequestId && mpesaStatus === 'WAITING') {
+      const checkStatus = async () => {
+        try {
+          const response = await fetch(`/api/mpesa/status/${checkoutRequestId}`);
+          const data = await response.json();
+
+          if (data.status === 'SUCCESS') {
+            setMpesaStatus('CONFIRMED');
+            setMpesaConfirmation(data.reference);
+            setSuccess("MPESA PAYMENT RECEIVED! Click Finish Sale to complete.");
+            setCheckoutRequestId(null);
+          } else if (data.status === 'FAILED') {
+            setMpesaStatus('FAILED');
+            setError(`Payment Failed: ${data.resultDesc || 'Unknown error'}`);
+            setCheckoutRequestId(null);
+          }
+        } catch (error) {
+          console.error('Polling error:', error);
+        }
+      };
+
+      pollInterval = setInterval(checkStatus, 3000); // Check every 3 seconds
+    }
+
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [checkoutRequestId, mpesaStatus]);
+
+  const triggerStkPush = async () => {
+    if (!mpesaPhone || mpesaPhone.length < 10) {
+      setError("PLEASE ENTER A VALID PHONE NUMBER");
+      return;
+    }
+
+    const config = businessProfile?.mpesaConfig;
+    if (!config?.consumerKey || !config?.consumerSecret || !config?.shortCode) {
+      setError("M-PESA API NOT CONFIGURED. PLEASE USE MANUAL CONFIRMATION.");
+      return;
+    }
+
+    setIsStkLoading(true);
+    setMpesaStatus('WAITING');
+    setError(null);
+
+    try {
+      const response = await fetch('/api/mpesa/stkpush', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: mpesaPhone,
+          amount: total,
+          config: config
+        })
+      });
+
+      const data = await response.json();
+      if (data.CheckoutRequestID) {
+        setCheckoutRequestId(data.CheckoutRequestID);
+      } else {
+        throw new Error(data.error || 'Failed to initiate STK push');
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to trigger M-Pesa prompt.");
+      setMpesaStatus('IDLE');
+    } finally {
+      setIsStkLoading(false);
+    }
+  };
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isStaffMode, setIsStaffMode] = useState(false);
   const [isInitialLoadDone, setIsInitialLoadDone] = useState(false);
@@ -414,6 +490,7 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
           cashierName: user.name,
           loyaltyPointsEarned: loyaltyPoints,
           paymentMethod,
+          status: 'COMPLETED',
           mpesaReference: confirmation ? (confirmation.includes('Ref: ') ? confirmation.split('Ref: ')[1] : confirmation) : undefined,
           cashReceived: paymentMethod === 'CASH' && !isNaN(received) ? Number(received.toFixed(2)) : undefined,
           change: paymentMethod === 'CASH' && !isNaN(received) ? Number(changeDue.toFixed(2)) : undefined,
@@ -932,7 +1009,7 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
                 </div>
               ) : paymentMethod === 'MPESA' ? (
                 <div className="flex-1 flex flex-col md:flex-row items-center gap-3 w-full">
-                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3 w-full text-left">
                     <div className="relative">
                       <div className="absolute left-3 top-2 text-[10px] font-black text-indigo-400 uppercase tracking-tighter">M-Pesa Phone Number</div>
                       <input
@@ -941,42 +1018,76 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
                         className="w-full bg-white border-2 border-indigo-200 rounded-xl px-3 pt-5 pb-2 text-indigo-600 font-extrabold text-lg outline-none focus:border-indigo-400"
                         value={mpesaPhone}
                         onChange={(e) => setMpesaPhone(e.target.value)}
+                        disabled={mpesaStatus === 'WAITING' || isStkLoading}
                       />
                     </div>
                     <div className="relative">
                       <div className="absolute left-3 top-2 text-[10px] font-black text-indigo-400 uppercase tracking-tighter">Transaction Ref (Optional)</div>
                       <input
                         type="text"
-                        placeholder="ABC123XYZ"
+                        placeholder="M-Pesa Reference"
                         className="w-full bg-white border-2 border-indigo-200 rounded-xl px-3 pt-5 pb-2 text-indigo-600 font-extrabold text-lg outline-none focus:border-indigo-400"
                         value={mpesaConfirmation || ''}
                         onChange={(e) => setMpesaConfirmation(e.target.value)}
+                        disabled={mpesaStatus === 'WAITING' || isStkLoading}
                       />
                     </div>
                   </div>
-                  <button 
-                    onClick={() => {
-                      if (mpesaPhone.length < 10) {
-                        setError("PLEASE ENTER A VALID PHONE NUMBER");
-                        return;
-                      }
-                      setMpesaStatus('CONFIRMED');
-                      if (!mpesaConfirmation) {
-                        setMpesaConfirmation('Confirmed Ref: ' + Math.random().toString(36).substring(2, 10).toUpperCase());
-                      }
-                      setSuccess("MPESA PAYMENT CONFIRMED!");
-                    }}
-                    className={`px-8 py-4 rounded-xl text-xs font-black shadow-lg transition-all animate-in zoom-in-95 duration-200 whitespace-nowrap ${
-                      mpesaStatus === 'CONFIRMED' ? 'bg-emerald-600 text-white' : 'bg-indigo-600 text-white animate-pulse'
-                    }`}
-                  >
-                    {mpesaStatus === 'CONFIRMED' ? (
-                      <div className="flex items-center gap-2">
-                        <CheckCircle className="w-4 h-4" />
-                        <span>PAYMENT CONFIRMED</span>
-                      </div>
-                    ) : 'CONFIRM MPESA'}
-                  </button>
+                  
+                  <div className="flex items-center gap-2">
+                    {/* STK Push Trigger */}
+                    <button 
+                      onClick={triggerStkPush}
+                      disabled={mpesaStatus === 'WAITING' || isStkLoading || mpesaStatus === 'CONFIRMED'}
+                      className={`px-8 py-4 rounded-xl text-xs font-black shadow-lg transition-all flex items-center gap-2 ${
+                        mpesaStatus === 'CONFIRMED' ? 'bg-emerald-600 text-white' : 
+                        mpesaStatus === 'WAITING' ? 'bg-amber-500 text-white' :
+                        'bg-indigo-600 text-white hover:bg-indigo-700'
+                      }`}
+                    >
+                      {isStkLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>SENDING PROMPT...</span>
+                        </>
+                      ) : mpesaStatus === 'WAITING' ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>WAITING FOR PIN...</span>
+                        </>
+                      ) : mpesaStatus === 'CONFIRMED' ? (
+                        <>
+                          <CheckCircle className="w-4 h-4" />
+                          <span>PAID</span>
+                        </>
+                      ) : (
+                        <>
+                          <Smartphone className="w-4 h-4" />
+                          <span>SEND PROMPT</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* Manual Confirm / Fallback */}
+                    {mpesaStatus !== 'CONFIRMED' && (
+                      <button 
+                        onClick={() => {
+                          if (mpesaPhone.length < 10) {
+                            setError("PLEASE ENTER A VALID PHONE NUMBER");
+                            return;
+                          }
+                          setMpesaStatus('CONFIRMED');
+                          if (!mpesaConfirmation) {
+                            setMpesaConfirmation('Manual Ref: ' + Math.random().toString(36).substring(2, 10).toUpperCase());
+                          }
+                          setSuccess("MPESA PAYMENT CONFIRMED MANUALLY!");
+                        }}
+                        className="px-4 py-4 bg-white border-2 border-slate-200 rounded-xl text-slate-400 font-black text-xs hover:border-indigo-400 hover:text-indigo-400 transition-all uppercase whitespace-nowrap"
+                      >
+                        MANUAL
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <>

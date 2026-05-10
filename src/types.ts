@@ -21,6 +21,12 @@ export interface MpesaConfig {
   paybillNumber?: string;
   paybillAccount?: string;
   tillNumber?: string;
+  // API Credentials
+  consumerKey?: string;
+  consumerSecret?: string;
+  passkey?: string;
+  shortCode?: string;
+  isStkPushEnabled?: boolean;
 }
 
 export interface BusinessProfile {
@@ -46,6 +52,7 @@ export interface Shop {
 
 export type Role = 'admin' | 'staff' | 'manager' | 'hr';
 export type PaymentMethod = 'CASH' | 'MPESA' | 'CARD' | 'DEBT';
+export type SaleStatus = 'COMPLETED' | 'PENDING_PAYMENT' | 'FAILED_PAYMENT' | 'CANCELLED';
 export type AlertType = 'PRICE_OVERRIDE' | 'LOW_STOCK' | 'EXPIRY_WARNING' | 'DEBT_OVERDUE';
 export type AlertStatus = 'UNREAD' | 'READ';
 
@@ -219,6 +226,7 @@ export interface Sale {
     code?: string;
   };
   paymentMethod: PaymentMethod;
+  status: SaleStatus;
   mpesaReference?: string;
   etimsControlNumber?: string;
   etimsQrCode?: string;
