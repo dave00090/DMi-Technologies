@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
 import { localDb } from '../services/localDb';
 
 interface SafeImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
@@ -6,12 +6,12 @@ interface SafeImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   fallback?: React.ReactNode;
 }
 
-export const SafeImage: React.FC<SafeImageProps> = ({ src, fallback, ...props }) => {
-  const [displaySrc, setDisplaySrc] = useState<string | undefined>(undefined);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+export function SafeImage({ src, fallback, ...props }: SafeImageProps) {
+  const [displaySrc, setDisplaySrc] = React.useState<string | undefined>(undefined);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState(false);
 
-  useEffect(() => {
+  React.useEffect(() => {
     let isMounted = true;
 
     const loadImage = async () => {
@@ -65,4 +65,4 @@ export const SafeImage: React.FC<SafeImageProps> = ({ src, fallback, ...props })
       }}
     />
   );
-};
+}
