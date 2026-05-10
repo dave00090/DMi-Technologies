@@ -32,20 +32,37 @@ async function startServer() {
 
   app.post('/api/mpesa/stkpush', async (req, res) => {
     console.log('Received STK Push request');
-    const { phoneNumber, amount, config } = req.body;
-    const { consumerKey, consumerSecret, passkey, shortCode } = config;
+    let { phoneNumber, amount, config } = req.body;
+    const { consumerKey, consumerSecret, passkey, shortCode, environment = 'sandbox' } = config;
 
     if (!consumerKey || !consumerSecret || !passkey || !shortCode) {
       console.error('Missing credentials in request');
       return res.status(400).json({ error: 'Missing M-Pesa credentials' });
     }
 
+    const baseUrl = environment === 'production' 
+      ? 'https://api.safaricom.co.ke' 
+      : 'https://sandbox.safaricom.co.ke';
+
+    // Format phone number: ensure 254... format
+    phoneNumber = phoneNumber.replace(/\+/g, '').replace(/\s/g, '');
+    if (phoneNumber.startsWith('0')) {
+      phoneNumber = '254' + phoneNumber.slice(1);
+    } else if (phoneNumber.startsWith('7') || phoneNumber.startsWith('1')) {
+      phoneNumber = '254' + phoneNumber;
+    }
+
+    if (!/^254[17][0-9]{8}$/.test(phoneNumber)) {
+      return res.status(400).json({ error: 'Invalid phone number. Must be in format 2547XXXXXXXX or 07XXXXXXXX' });
+    }
+
     try {
-      console.log('Fetching Access Token...');
+      console.log(`Fetching Access Token from ${baseUrl}...`);
       // 1. Get Access Token
       const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
-      const authResponse = await axios.get('https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials', {
-        headers: { Authorization: `Basic ${auth}` }
+      const authResponse = await axios.get(`${baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
+        headers: { Authorization: `Basic ${auth}` },
+        timeout: 15000 // 15s timeout
       });
       const accessToken = authResponse.data.access_token;
       console.log('Access Token acquired');
@@ -55,21 +72,32 @@ async function startServer() {
       const password = Buffer.from(`${shortCode}${passkey}${timestamp}`).toString('base64');
 
       // 3. Initiate STK Push
-      console.log(`Initiating STK Push for ${phoneNumber} amount ${amount}...`);
-      const stkResponse = await axios.post('https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest', {
+      console.log(`Initiating STK Push to ${baseUrl} for ${phoneNumber} amount ${amount}...`);
+      
+      // Use HTTPS for callback if possible, or a fallback hostname
+      const protocol = req.headers['x-forwarded-proto'] || 'https';
+      const host = req.headers['x-forwarded-host'] || req.get('host');
+      
+      // Use manual override if provided, otherwise detect
+      const callBackURL = config.callbackUrl || `${protocol}://${host}/api/mpesa/callback`;
+
+      console.log(`Using Callback URL: ${callBackURL}`);
+
+      const stkResponse = await axios.post(`${baseUrl}/mpesa/stkpush/v1/processrequest`, {
         BusinessShortCode: shortCode,
         Password: password,
         Timestamp: timestamp,
-        TransactionType: 'CustomerPayBillOnline',
-        Amount: Math.round(amount),
-        PartyA: phoneNumber.replace('+', ''),
+        TransactionType: 'CustomerPayBillOnline', 
+        Amount: Math.max(1, Math.round(amount)),
+        PartyA: phoneNumber,
         PartyB: shortCode,
-        PhoneNumber: phoneNumber.replace('+', ''),
-        CallBackURL: `${req.protocol}://${req.get('host')}/api/mpesa/callback`,
+        PhoneNumber: phoneNumber,
+        CallBackURL: callBackURL,
         AccountReference: 'DMiTechnologies',
         TransactionDesc: 'Payment for goods'
       }, {
-        headers: { Authorization: `Bearer ${accessToken}` }
+        headers: { Authorization: `Bearer ${accessToken}` },
+        timeout: 30000 // 30s timeout
       });
 
       console.log('STK Push initiated successfully:', stkResponse.data.CheckoutRequestID);
@@ -79,8 +107,16 @@ async function startServer() {
       res.json(stkResponse.data);
     } catch (error: any) {
       const errorData = error.response?.data || error.message;
-      console.error('STK Push Error:', JSON.stringify(errorData));
-      res.status(500).json({ error: errorData || 'Failed to initiate STK push' });
+      console.error('STK Push Error Detail:', JSON.stringify(errorData));
+      
+      let clientErrorMessage = 'Failed to initiate STK push';
+      if (error.code === 'ECONNABORTED') {
+        clientErrorMessage = 'Request timed out while connecting to Safaricom. Please try again.';
+      } else if (error.response) {
+        clientErrorMessage = error.response.data?.errorMessage || error.response.data?.ResponseDescription || 'Safaricom API Error';
+      }
+
+      res.status(500).json({ error: clientErrorMessage, details: errorData });
     }
   });
 

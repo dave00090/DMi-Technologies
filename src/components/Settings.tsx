@@ -438,6 +438,32 @@ export const Settings: React.FC<SettingsProps> = ({ user, businessId, shopId, on
                 placeholder="174379 (for Sandbox)"
               />
             </div>
+            <div>
+              <label className="block text-sm font-bold text-ink opacity-70 mb-2">Environment</label>
+              <select
+                value={businessProfile.mpesaConfig?.environment || 'sandbox'}
+                onChange={(e) => handleUpdateBusiness({ 
+                  mpesaConfig: { ...businessProfile.mpesaConfig, environment: e.target.value as 'sandbox' | 'production' } 
+                })}
+                className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-ink focus:ring-2 focus:ring-indigo-500 outline-none font-bold"
+              >
+                <option value="sandbox">Sandbox (Testing)</option>
+                <option value="production">Production (Live)</option>
+              </select>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-ink opacity-70 mb-2">Manual Callback URL (Optional)</label>
+              <input
+                type="text"
+                value={businessProfile.mpesaConfig?.callbackUrl || ''}
+                onChange={(e) => handleUpdateBusiness({ 
+                  mpesaConfig: { ...businessProfile.mpesaConfig, callbackUrl: e.target.value.trim() } 
+                })}
+                className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-ink focus:ring-2 focus:ring-indigo-500 outline-none"
+                placeholder="https://your-domain.com/api/mpesa/callback"
+              />
+              <p className="text-[10px] text-muted mt-1 uppercase font-bold tracking-widest opacity-50">Only use this if STK Push fails with a callback error.</p>
+            </div>
           </div>
         </div>
       </div>

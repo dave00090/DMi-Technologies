@@ -96,7 +96,8 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
     if (checkoutRequestId && mpesaStatus === 'WAITING') {
       const checkStatus = async () => {
         try {
-          const response = await fetch(`/api/mpesa/status/${checkoutRequestId}`);
+          const apiHost = window.location.origin;
+          const response = await fetch(`${apiHost}/api/mpesa/status/${checkoutRequestId}`);
           const data = await response.json();
 
           if (data.status === 'SUCCESS') {
@@ -139,7 +140,9 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
     setError(null);
 
     try {
-      const response = await fetch('/api/mpesa/stkpush', {
+      // Ensure we are calling the API on the same host
+      const apiHost = window.location.origin;
+      const response = await fetch(`${apiHost}/api/mpesa/stkpush`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -149,19 +152,26 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
         })
       });
 
+      const responseText = await response.text();
+      
       if (!response.ok) {
-        const errorText = await response.text();
         let errorMessage = 'Failed to initiate STK push';
         try {
-          const errorJson = JSON.parse(errorText);
+          const errorJson = JSON.parse(responseText);
           errorMessage = errorJson.error || errorMessage;
         } catch (e) {
-          errorMessage = `Server error (${response.status}): ${errorText.substring(0, 50)}...`;
+          errorMessage = `Server error (${response.status}). If you are on Netlify, please note that the M-Pesa backend requires a Node.js host.`;
         }
         throw new Error(errorMessage);
       }
 
-      const data = await response.json();
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        throw new Error("Invalid response from server. Backend might not be running.");
+      }
+
       if (data.CheckoutRequestID) {
         setCheckoutRequestId(data.CheckoutRequestID);
       } else {

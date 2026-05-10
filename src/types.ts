@@ -27,6 +27,8 @@ export interface MpesaConfig {
   passkey?: string;
   shortCode?: string;
   isStkPushEnabled?: boolean;
+  environment?: 'sandbox' | 'production';
+  callbackUrl?: string; // Manual override for callback
 }
 
 export interface BusinessProfile {
