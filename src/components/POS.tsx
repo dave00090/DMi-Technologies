@@ -149,6 +149,18 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
         })
       });
 
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = 'Failed to initiate STK push';
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.error || errorMessage;
+        } catch (e) {
+          errorMessage = `Server error (${response.status}): ${errorText.substring(0, 50)}...`;
+        }
+        throw new Error(errorMessage);
+      }
+
       const data = await response.json();
       if (data.CheckoutRequestID) {
         setCheckoutRequestId(data.CheckoutRequestID);

@@ -31,26 +31,31 @@ async function startServer() {
   }, 10 * 60 * 1000);
 
   app.post('/api/mpesa/stkpush', async (req, res) => {
+    console.log('Received STK Push request');
     const { phoneNumber, amount, config } = req.body;
     const { consumerKey, consumerSecret, passkey, shortCode } = config;
 
     if (!consumerKey || !consumerSecret || !passkey || !shortCode) {
+      console.error('Missing credentials in request');
       return res.status(400).json({ error: 'Missing M-Pesa credentials' });
     }
 
     try {
+      console.log('Fetching Access Token...');
       // 1. Get Access Token
       const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
       const authResponse = await axios.get('https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials', {
         headers: { Authorization: `Basic ${auth}` }
       });
       const accessToken = authResponse.data.access_token;
+      console.log('Access Token acquired');
 
       // 2. Generate Password
       const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
       const password = Buffer.from(`${shortCode}${passkey}${timestamp}`).toString('base64');
 
       // 3. Initiate STK Push
+      console.log(`Initiating STK Push for ${phoneNumber} amount ${amount}...`);
       const stkResponse = await axios.post('https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest', {
         BusinessShortCode: shortCode,
         Password: password,
@@ -67,13 +72,15 @@ async function startServer() {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
 
+      console.log('STK Push initiated successfully:', stkResponse.data.CheckoutRequestID);
       const checkoutRequestID = stkResponse.data.CheckoutRequestID;
       pendingTransactions.set(checkoutRequestID, { status: 'PENDING', timestamp: Date.now() });
 
       res.json(stkResponse.data);
     } catch (error: any) {
-      console.error('STK Push Error:', error.response?.data || error.message);
-      res.status(500).json({ error: error.response?.data || 'Failed to initiate STK push' });
+      const errorData = error.response?.data || error.message;
+      console.error('STK Push Error:', JSON.stringify(errorData));
+      res.status(500).json({ error: errorData || 'Failed to initiate STK push' });
     }
   });
 
