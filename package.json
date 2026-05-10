@@ -9,6 +9,7 @@
   "main": "main.cjs",
   "scripts": {
     "dev": "tsx server.ts",
+    "start": "tsx server.ts",
     "build": "vite build --mode production",
     "preview": "vite preview",
     "clean": "rm -rf dist",
@@ -64,6 +65,7 @@
     "html5-qrcode": "^2.3.8",
     "idb-keyval": "^6.2.2",
     "lucide-react": "^0.473.0",
+    "motion": "^12.38.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-to-print": "^3.0.2",

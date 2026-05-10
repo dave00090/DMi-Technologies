@@ -153,6 +153,47 @@ async function startServer() {
     res.json(transaction);
   });
 
+  app.get('/api/mpesa/test', async (req, res) => {
+    const { consumerKey, consumerSecret, environment = 'sandbox' } = req.query;
+    
+    if (!consumerKey || !consumerSecret) {
+      return res.status(400).json({ error: 'Missing credentials' });
+    }
+
+    const baseUrl = environment === 'production' 
+      ? 'https://api.safaricom.co.ke' 
+      : 'https://sandbox.safaricom.co.ke';
+
+    try {
+      const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+      const authResponse = await axios.get(`${baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
+        headers: { Authorization: `Basic ${auth}` },
+        timeout: 10000
+      });
+      
+      res.json({ 
+        status: 'SUCCESS', 
+        message: 'Successfully authenticated with Safaricom!',
+        environment: environment
+      });
+    } catch (error: any) {
+      res.status(500).json({ 
+        status: 'FAILED', 
+        error: error.response?.data?.errorMessage || error.message,
+        details: error.response?.data
+      });
+    }
+  });
+
+  app.get('/api/health', (req, res) => {
+    res.json({ 
+      status: 'OK', 
+      serverTime: new Date().toISOString(),
+      nodeVersion: process.version,
+      env: process.env.NODE_ENV || 'development'
+    });
+  });
+
   app.get('/api/my-ip', (req, res) => {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     res.json({ ip: Array.isArray(ip) ? ip[0] : ip });

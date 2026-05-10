@@ -61,6 +61,8 @@ export const Settings: React.FC<SettingsProps> = ({ user, businessId, shopId, on
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [currentTheme, setCurrentTheme] = useState<ThemeConfig>(user.theme || PRESET_THEMES[0].config);
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile>(localDb.getBusinessById(businessId)!);
+  const [testingMpesa, setTestingMpesa] = useState(false);
+  const [mpesaTestResult, setMpesaTestResult] = useState<{ status: 'SUCCESS' | 'FAILED', message: string } | null>(null);
   const activeShop = localDb.getShopById(shopId);
 
   const showSuccess = (msg: string) => {
@@ -451,18 +453,50 @@ export const Settings: React.FC<SettingsProps> = ({ user, businessId, shopId, on
                 <option value="production">Production (Live)</option>
               </select>
             </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm font-bold text-ink opacity-70 mb-2">Manual Callback URL (Optional)</label>
-              <input
-                type="text"
-                value={businessProfile.mpesaConfig?.callbackUrl || ''}
-                onChange={(e) => handleUpdateBusiness({ 
-                  mpesaConfig: { ...businessProfile.mpesaConfig, callbackUrl: e.target.value.trim() } 
-                })}
-                className="w-full px-4 py-3 bg-muted border border-border rounded-xl text-ink focus:ring-2 focus:ring-indigo-500 outline-none"
-                placeholder="https://your-domain.com/api/mpesa/callback"
-              />
-              <p className="text-[10px] text-muted mt-1 uppercase font-bold tracking-widest opacity-50">Only use this if STK Push fails with a callback error.</p>
+            <div className="md:col-span-2 flex flex-col gap-4">
+              <div className="flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const config = businessProfile.mpesaConfig;
+                    if (!config?.consumerKey || !config?.consumerSecret) {
+                      setMpesaTestResult({ status: 'FAILED', message: 'Please enter Consumer Key and Secret first.' });
+                      return;
+                    }
+                    setTestingMpesa(true);
+                    setMpesaTestResult(null);
+                    try {
+                      const params = new URLSearchParams({
+                        consumerKey: config.consumerKey,
+                        consumerSecret: config.consumerSecret,
+                        environment: config.environment || 'sandbox'
+                      });
+                      const response = await fetch(`/api/mpesa/test?${params}`);
+                      const data = await response.json();
+                      setMpesaTestResult({ 
+                        status: response.ok ? 'SUCCESS' : 'FAILED', 
+                        message: data.message || data.error || 'Test failed' 
+                      });
+                    } catch (e) {
+                      setMpesaTestResult({ status: 'FAILED', message: 'API Route not available. Full-stack features require a Node.js host.' });
+                    } finally {
+                      setTestingMpesa(false);
+                    }
+                  }}
+                  disabled={testingMpesa}
+                  className="px-6 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                  {testingMpesa ? 'Testing...' : 'Test Connection'}
+                </button>
+                {mpesaTestResult && (
+                  <div className={`px-4 py-2 rounded-lg text-xs font-bold ${mpesaTestResult.status === 'SUCCESS' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                    {mpesaTestResult.message}
+                  </div>
+                )}
+              </div>
+              <p className="text-[10px] text-muted uppercase font-bold tracking-widest opacity-50">
+                Tip: If testing on Sandbox, use Shortcode 174379 and generate your credentials on Safaricom Daraja Sandbox.
+              </p>
             </div>
           </div>
         </div>

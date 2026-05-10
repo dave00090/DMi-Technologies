@@ -139,6 +139,9 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
     setMpesaStatus('WAITING');
     setError(null);
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 35000); // 35s timeout
+
     try {
       // Ensure we are calling the API on the same host
       const apiHost = window.location.origin;
@@ -149,18 +152,30 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
           phoneNumber: mpesaPhone,
           amount: total,
           config: config
-        })
+        }),
+        signal: controller.signal
       });
 
+      clearTimeout(timeoutId);
       const responseText = await response.text();
       
       if (!response.ok) {
         let errorMessage = 'Failed to initiate STK push';
+        const isStaticHost = window.location.hostname.includes('netlify.app') || 
+                            window.location.hostname.includes('vercel.app') || 
+                            window.location.hostname.includes('github.io');
+
         try {
           const errorJson = JSON.parse(responseText);
-          errorMessage = errorJson.error || errorMessage;
+          errorMessage = errorJson.error || errorJson.errorMessage || errorMessage;
         } catch (e) {
-          errorMessage = `Server error (${response.status}). If you are on Netlify, please note that the M-Pesa backend requires a Node.js host.`;
+          if (response.status === 404) {
+            errorMessage = isStaticHost 
+              ? `Backend APIs are not found on ${window.location.hostname}. This host only supports static files. Please deploy to a Node.js host (Cloud Run, Render, Railway, etc.) for M-Pesa to work.`
+              : `API Route not found (404). Backend might not be configured correctly in this environment.`;
+          } else {
+            errorMessage = `Server error (${response.status}). Safaricom may be unreachable or credentials may be invalid.`;
+          }
         }
         throw new Error(errorMessage);
       }
@@ -169,19 +184,25 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
       try {
         data = JSON.parse(responseText);
       } catch (e) {
-        throw new Error("Invalid response from server. Backend might not be running.");
+        throw new Error("Invalid response format from server.");
       }
 
       if (data.CheckoutRequestID) {
         setCheckoutRequestId(data.CheckoutRequestID);
+        // We keep mpesaStatus as WAITING
       } else {
-        throw new Error(data.error || 'Failed to initiate STK push');
+        throw new Error(data.error || data.errorMessage || 'Failed to initiate STK push');
       }
     } catch (err: any) {
-      setError(err.message || "Failed to trigger M-Pesa prompt.");
+      if (err.name === 'AbortError') {
+        setError("REQUEST TIMED OUT. PLEASE CHECK YOUR CONNECTION.");
+      } else {
+        setError(err.message || "Failed to trigger M-Pesa prompt.");
+      }
       setMpesaStatus('IDLE');
     } finally {
       setIsStkLoading(false);
+      clearTimeout(timeoutId);
     }
   };
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
