@@ -199,21 +199,34 @@ async function startServer() {
     res.json({ ip: Array.isArray(ip) ? ip[0] : ip });
   });
 
+  // Specific 404 for API routes
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ error: 'API endpoint not found' });
+  });
+
   console.log(`NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
   console.log(`PORT: ${PORT}`);
 
   // Vite middleware for development
   const isProd = process.env.NODE_ENV === 'production';
-  const distPath = path.join(process.cwd(), 'dist');
+  const distPath = path.resolve(__dirname, 'dist');
   const hasDist = fs.existsSync(distPath);
 
   if (!isProd || !hasDist) {
-    console.log('Starting in DEVELOPMENT mode (using Vite middleware)');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
+    console.log(`Starting in DEVELOPMENT mode (hasDist: ${hasDist})`);
+    try {
+      const vite = await createViteServer({
+        server: { 
+          middlewareMode: true,
+          watch: null, // Disable file watching to prevent hangs in some environments
+        },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+      console.log('Vite middleware initialized');
+    } catch (vErr) {
+      console.error('FAILED to initialize Vite server:', vErr);
+    }
   } else {
     console.log('Starting in PRODUCTION mode (serving from dist)');
     app.use(express.static(distPath));
@@ -222,9 +235,20 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
+
+  server.on('error', (e: any) => {
+    if (e.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use`);
+    } else {
+      console.error('Server error:', e);
+    }
   });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("CRITICAL: Failed to start server:", err);
+  process.exit(1);
+});
