@@ -6,6 +6,7 @@
   "description": "Premium Retail Point of Sale System",
   "author": "DMi Technologies",
   "type": "module",
+  "main": "main.cjs",
   "scripts": {
     "dev": "tsx server.ts",
     "dev:pure-vite": "vite --port 3000 --host 0.0.0.0",
@@ -40,7 +41,7 @@
     "asar": true,
     "win": {
       "target": "nsis",
-      "icon": "public/app-icon.png"
+      "icon": "public/app-icon.ico"
     },
     "mac": {
       "target": "dmg",
@@ -55,6 +56,7 @@
     "@capacitor/android": "^6.2.0",
     "@capacitor/cli": "^6.2.0",
     "@capacitor/core": "^6.2.0",
+    "@emotion/is-prop-valid": "^1.4.0",
     "@supabase/supabase-js": "^2.45.0",
     "axios": "^1.7.9",
     "clsx": "^2.1.1",
