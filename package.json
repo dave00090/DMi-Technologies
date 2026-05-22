@@ -1,0 +1,94 @@
+{
+  "name": "react-example",
+  "private": true,
+  "version": "1.0.0",
+  "homepage": ".",
+  "description": "Premium Retail Point of Sale System",
+  "author": "DMi Technologies",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx server.ts",
+    "dev:pure-vite": "vite --port 3000 --host 0.0.0.0",
+    "start": "tsx server.ts",
+    "build": "vite build --mode production",
+    "preview": "vite preview",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit",
+    "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "electron:build": "npm run build && electron-builder",
+    "android:init": "npx cap init \"DMi Technologies POS\" com.dmitechnologies.app",
+    "android:add": "npx cap add android",
+    "android:sync": "npm run build && npx cap sync android",
+    "android:open": "npx cap open android",
+    "android:assets": "npx capacitor-assets generate --android",
+    "android:build": "npm run build && npx cap sync android && npx cap build android"
+  },
+  "build": {
+    "appId": "com.dmitechnologies.app",
+    "productName": "DMi Technologies POS",
+    "directories": {
+      "output": "dist_electron",
+      "buildResources": "public"
+    },
+    "files": [
+      "dist",
+      "public",
+      "main.cjs",
+      "preload.cjs",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": "nsis",
+      "icon": "public/app-icon.png"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "public/app-icon.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "public/app-icon.png"
+    }
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/cli": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "axios": "^1.7.9",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "dotenv": "^17.4.2",
+    "express": "^4.22.1",
+    "html5-qrcode": "^2.3.8",
+    "idb-keyval": "^6.2.2",
+    "lucide-react": "^0.473.0",
+    "motion": "^12.38.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-to-print": "^3.0.2",
+    "recharts": "^2.15.0",
+    "tailwind-merge": "^2.6.0",
+    "uuid": "^11.0.5"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@tailwindcss/vite": "^4.1.14",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/uuid": "^10.0.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^9.2.1",
+    "electron": "^41.0.3",
+    "electron-builder": "^26.8.1",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0",
+    "wait-on": "^9.0.4"
+  }
+}

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DMi Technologies POS</title>
+    <link rel="icon" type="image/png" href="./app-icon.png" />
+    <link rel="manifest" href="./manifest.json" />
+    <meta name="theme-color" content="#4f46e5" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      (function() {
+        // Global error tracking
+        window.onerror = function(msg, url, line, col, error) {
+          // Ignore benign Vite/WebSocket errors
+          var message = String(msg || '');
+          if (message.indexOf('WebSocket') !== -1 || message.indexOf('websocket') !== -1) {
+            return true;
+          }
+
+          var display = document.getElementById('critical-error-display');
+          if (!display) {
+            display = document.createElement('div');
+            display.id = 'critical-error-display';
+            display.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:#0f172a;color:#ef4444;padding:40px;font-family:sans-serif;z-index:99999;overflow:auto';
+            document.body.appendChild(display);
+          }
+
+          var stack = error && error.stack ? error.stack : 'No stack trace available';
+          display.innerHTML = '<h1 style="color:#6366f1;margin-bottom:20px">System Startup Error</h1>' +
+                              '<div style="background:#1e293b;padding:20px;border-radius:12px;color:#cbd5e1;border:1px solid #334155">' +
+                              '<p style="color:#f8fafc;font-weight:bold">Message: ' + message + '</p>' +
+                              '<p style="font-size:12px">Location: ' + url + ':' + line + ':' + col + '</p>' +
+                              '<hr style="border:0;border-top:1px solid #334155;margin:15px 0">' +
+                              '<pre style="font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-all">' + stack + '</pre>' +
+                              '</div>' +
+                              '<button onclick="location.reload()" style="margin-top:20px;background:#6366f1;color:white;border:none;padding:12px 24px;border-radius:8px;font-weight:bold;cursor:pointer">Retry System Load</button>';
+          
+          return false; // Let it log to console too
+        };
+
+        window.onunhandledrejection = function(event) {
+          var reason = event.reason;
+          var msg = reason && reason.message ? reason.message : String(reason);
+          
+          if (msg.indexOf('WebSocket') !== -1 || msg.indexOf('websocket') !== -1) {
+            return;
+          }
+
+          console.error('Unhandled rejection:', reason);
+          window.onerror('Unhandled Promise Rejection: ' + msg, '', 0, 0, reason);
+        };
+
+        // Fallback: If after 10 seconds root is still empty, show a message
+        setTimeout(function() {
+          var root = document.getElementById('root');
+          var display = document.getElementById('critical-error-display');
+          if (root && root.innerHTML === '' && !display) {
+            window.onerror('The application failed to render within 10 seconds. Check console for hidden errors.', 'timeout', 0, 0);
+          }
+        }, 10000);
+      })();
+    </script>
+    <script type="module" src="./src/main.tsx"></script>
+  </body>
+</html>
+

@@ -1,0 +1,221 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-primary: var(--primary-color, #4f46e5);
+  --color-secondary: var(--secondary-color, #7c3aed);
+  --color-accent: var(--accent-color, #10b981);
+  
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-ink: var(--ink);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+}
+
+:root {
+  --bg: #f8fafc;
+  --card: #ffffff;
+  --ink: #0f172a;
+  --accent: #6366f1;
+  --border: #e2e8f0;
+  --muted: #64748b;
+  
+  --primary-color: #4f46e5;
+  --secondary-color: #7c3aed;
+  --accent-color: #10b981;
+}
+
+.dark {
+  --bg: #0f172a;
+  --card: #1e293b;
+  --ink: #f8fafc;
+  --accent: #818cf8;
+  --border: #334155;
+  --muted: #94a3b8;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  transition: background-color 0.3s ease, color 0.3s ease;
+  zoom: var(--app-zoom, 1);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.scroll-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scroll-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.receipt-font {
+  font-family: var(--font-mono);
+}
+
+@media print {
+  /* Default: Hide everything on print */
+  body * {
+    visibility: hidden !important;
+  }
+  
+  /* ========================================================== */
+  /* CASE 1: Printing Receipt (class .printing-receipt on body) */
+  /* ========================================================== */
+  body.printing-receipt {
+    background: white !important;
+    color: black !important;
+    visibility: hidden !important;
+  }
+  
+  body.printing-receipt #print-receipt,
+  body.printing-receipt #print-receipt * {
+    visibility: visible !important;
+  }
+
+  body.printing-receipt #print-receipt {
+    position: absolute !important;
+    left: 50% !important;
+    top: 0 !important;
+    transform: translateX(-50%) !important;
+    width: 400px !important;
+    max-width: 100% !important;
+    background: white !important;
+    color: black !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    z-index: 9999999 !important;
+    display: block !important;
+  }
+
+  /* Hide print dialogue page markers & force backgrounds */
+  @page {
+    margin: 0;
+  }
+
+  /* Make modal backdrops and outer divs transparent for receipt */
+  body.printing-receipt div:not(#print-receipt),
+  body.printing-receipt main {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* ========================================================== */
+  /* CASE 2: Printing Report (NO .printing-receipt class)       */
+  /* ========================================================== */
+  body:not(.printing-receipt) {
+    background: white !important;
+    color: black !important;
+  }
+
+  body:not(.printing-receipt) main, 
+  body:not(.printing-receipt) main * {
+    visibility: visible !important;
+  }
+
+  /* Hide peripheral layout sidebars, headers, and dashboard print buttons */
+  body:not(.printing-receipt) aside, 
+  body:not(.printing-receipt) header,
+  body:not(.printing-receipt) .print\:hidden {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  body:not(.printing-receipt) main {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 20px !important;
+    background: white !important;
+    overflow: visible !important;
+  }
+
+  /* Keep table lines and grids clean on print reports */
+  body:not(.printing-receipt) .border {
+    border-color: #d1d5db !important;
+  }
+
+  body:not(.printing-receipt) .bg-card {
+    background: white !important;
+    border: 1px solid #e5e7eb !important;
+    box-shadow: none !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin-bottom: 20px !important;
+  }
+
+  /* Prevent awkward page splits inside charts/tables */
+  .recharts-responsive-container {
+    width: 100% !important;
+    height: 320px !important;
+    min-height: 320px !important;
+    display: block !important;
+    position: relative !important;
+  }
+
+  .recharts-surface {
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  /* Force background colors to print across all elements */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+.custom-scrollbar {
+  scrollbar-width: auto;
+  scrollbar-color: #10b981 rgba(0, 0, 0, 0.1);
+  overflow-y: scroll !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  display: block !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #10b981;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #059669;
+  background-clip: padding-box;
+}
+

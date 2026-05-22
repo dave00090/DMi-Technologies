@@ -1,0 +1,970 @@
+import React, { useState, useEffect } from 'react';
+import { db } from '../services/db';
+import { Supplier, BusinessProfile, UserProfile } from '../types';
+import { 
+  Plus, 
+  Search, 
+  Trash2, 
+  Truck, 
+  Phone, 
+  Mail, 
+  MapPin,
+  User,
+  ExternalLink,
+  DollarSign,
+  History,
+  Download,
+  Filter,
+  X,
+  Edit2,
+  BookOpen
+} from 'lucide-react';
+import { format } from 'date-fns';
+import { DeleteConfirmationModal } from './DeleteConfirmationModal';
+
+interface SuppliersProps {
+  businessId: string;
+  user: UserProfile;
+  onViewLedger: (id: string) => void;
+}
+
+export const Suppliers: React.FC<SuppliersProps> = ({ businessId, user, onViewLedger }) => {
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [supplierToDelete, setSupplierToDelete] = useState<string | null>(null);
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterCreditors, setFilterCreditors] = useState(false);
+  const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
+  const [viewMode, setViewMode] = useState<'CARDS' | 'TABLE'>('CARDS');
+  const [newProduct, setNewProduct] = useState('');
+  
+  // Payment Modal State
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [selectedSupplierForPayment, setSelectedSupplierForPayment] = useState<Supplier | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MPESA' | 'CARD'>('CASH');
+  const [paymentReference, setPaymentReference] = useState('');
+  
+  const [formData, setFormData] = useState<Omit<Supplier, 'id'>>({
+    businessId,
+    name: '',
+    contactPerson: '',
+    email: '',
+    phone: '',
+    address: '',
+    category: '',
+    totalSupplied: 0,
+    totalPaid: 0,
+    balance: 0,
+    suppliedProducts: [],
+    createdAt: new Date().toISOString()
+  });
+
+  // Auto-calculate balance
+  useEffect(() => {
+    setFormData(prev => ({
+      ...prev,
+      balance: prev.totalSupplied - prev.totalPaid
+    }));
+  }, [formData.totalSupplied, formData.totalPaid]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const [supps, profile] = await Promise.all([
+        db.getSuppliers(businessId),
+        db.getBusinessById(businessId)
+      ]);
+      setSuppliers(supps);
+      setBusinessProfile(profile);
+    };
+    fetchData();
+
+    const handleDataUpdate = (e: any) => {
+      if (['dmi_pos_suppliers', 'dmi_pos_businesses'].includes(e.detail?.key)) {
+        fetchData();
+      }
+    };
+
+    window.addEventListener('local-db-update', handleDataUpdate);
+    window.addEventListener('storage-sync', handleDataUpdate);
+
+    return () => {
+      window.removeEventListener('local-db-update', handleDataUpdate);
+      window.removeEventListener('storage-sync', handleDataUpdate);
+    };
+  }, [businessId]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (editingSupplier) {
+        // Calculate differences for ledger entries if balances were manually adjusted
+        const suppliedDiff = formData.totalSupplied - editingSupplier.totalSupplied;
+        const paidDiff = formData.totalPaid - editingSupplier.totalPaid;
+
+        await db.updateSupplier(editingSupplier.id, formData);
+
+        if (suppliedDiff !== 0) {
+          await db.addLedgerEntry({
+            businessId,
+            entityId: editingSupplier.id,
+            entityType: 'SUPPLIER',
+            type: suppliedDiff > 0 ? 'CREDIT' : 'DEBIT',
+            amount: Math.abs(suppliedDiff),
+            balanceAfter: formData.balance,
+            description: `Manual adjustment of supplied amount${suppliedDiff > 0 ? ' (Increase)' : ' (Decrease)'}`,
+            timestamp: new Date().toISOString()
+          });
+        }
+
+        if (paidDiff !== 0) {
+          await db.addLedgerEntry({
+            businessId,
+            entityId: editingSupplier.id,
+            entityType: 'SUPPLIER',
+            type: paidDiff > 0 ? 'DEBIT' : 'CREDIT',
+            amount: Math.abs(paidDiff),
+            balanceAfter: formData.balance,
+            description: `Manual adjustment of paid amount${paidDiff > 0 ? ' (Increase)' : ' (Decrease)'}`,
+            timestamp: new Date().toISOString()
+          });
+        }
+      } else {
+        const newSupplier = await db.addSupplier(formData);
+        
+        // Add initial ledger entries if they have starting balances
+        if (formData.totalSupplied > 0) {
+          await db.addLedgerEntry({
+            businessId,
+            entityId: newSupplier.id,
+            entityType: 'SUPPLIER',
+            type: 'CREDIT',
+            amount: formData.totalSupplied,
+            balanceAfter: formData.totalSupplied,
+            description: 'Opening balance (Total Supplied)',
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        if (formData.totalPaid > 0) {
+          await db.addLedgerEntry({
+            businessId,
+            entityId: newSupplier.id,
+            entityType: 'SUPPLIER',
+            type: 'DEBIT',
+            amount: formData.totalPaid,
+            balanceAfter: formData.totalSupplied - formData.totalPaid,
+            description: 'Opening balance (Total Paid)',
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
+      
+      const freshSuppliers = await db.getSuppliers(businessId);
+      setSuppliers(freshSuppliers);
+      setIsModalOpen(false);
+      setEditingSupplier(null);
+      resetForm();
+    } catch (err) {
+      console.error('Failed to save supplier:', err);
+      alert('Failed to save supplier details. Please try again.');
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      businessId,
+      name: '',
+      contactPerson: '',
+      email: '',
+      phone: '',
+      address: '',
+      category: '',
+      totalSupplied: 0,
+      totalPaid: 0,
+      balance: 0,
+      suppliedProducts: [],
+      createdAt: new Date().toISOString()
+    });
+  };
+
+  const handleEdit = (supplier: Supplier) => {
+    setEditingSupplier(supplier);
+    setFormData({
+      businessId: supplier.businessId,
+      name: supplier.name,
+      contactPerson: supplier.contactPerson || '',
+      email: supplier.email || '',
+      phone: supplier.phone,
+      address: supplier.address || '',
+      category: supplier.category || '',
+      totalSupplied: supplier.totalSupplied,
+      totalPaid: supplier.totalPaid,
+      balance: supplier.balance,
+      suppliedProducts: supplier.suppliedProducts || [],
+      createdAt: supplier.createdAt
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (supplierToDelete) {
+      await db.deleteSupplier(supplierToDelete);
+      const freshSuppliers = await db.getSuppliers(businessId);
+      setSuppliers(freshSuppliers);
+      setIsDeleteConfirmOpen(false);
+      setSupplierToDelete(null);
+    }
+  };
+
+  const addProduct = () => {
+    if (newProduct.trim()) {
+      setFormData(prev => ({
+        ...prev,
+        suppliedProducts: [...(prev.suppliedProducts || []), newProduct.trim()]
+      }));
+      setNewProduct('');
+    }
+  };
+
+  const removeProduct = (index: number) => {
+    setFormData(prev => {
+      const updated = [...(prev.suppliedProducts || [])];
+      updated.splice(index, 1);
+      return { ...prev, suppliedProducts: updated };
+    });
+  };
+
+  const filteredSuppliers = suppliers.filter(s => {
+    const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      s.contactPerson?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      s.category?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      s.suppliedProducts?.some(p => p.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    if (filterCreditors) {
+      return matchesSearch && s.balance > 0;
+    }
+    return matchesSearch;
+  });
+
+  const handleDownloadCSV = () => {
+    const headers = ['Name', 'Contact Person', 'Category', 'Phone', 'Email', 'Address', 'Total Supplied', 'Balance Owed', 'Products'];
+    const rows = filteredSuppliers.map(s => [
+      s.name,
+      s.contactPerson || '',
+      s.category || '',
+      s.phone,
+      s.email || '',
+      s.address || '',
+      s.totalSupplied.toString(),
+      s.balance.toString(),
+      (s.suppliedProducts || []).join('; ')
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `suppliers_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleRecordPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSupplierForPayment || !paymentAmount) return;
+
+    const amount = parseFloat(paymentAmount);
+    if (isNaN(amount) || amount <= 0) {
+      alert('Please enter a valid payment amount');
+      return;
+    }
+
+    if (amount > selectedSupplierForPayment.balance) {
+      if (!confirm(`The payment amount (${amount}) is greater than the balance owed (${selectedSupplierForPayment.balance}). Proceed?`)) {
+        return;
+      }
+    }
+
+    try {
+      const newTotalPaid = selectedSupplierForPayment.totalPaid + amount;
+      const newBalance = selectedSupplierForPayment.totalSupplied - newTotalPaid;
+
+      // 1. Update Supplier
+      await db.updateSupplier(selectedSupplierForPayment.id, {
+        totalPaid: newTotalPaid,
+        balance: newBalance
+      });
+
+      // 2. Add Ledger Entry
+      const currentLedger = await db.getLedger(selectedSupplierForPayment.id, 'SUPPLIER');
+      // Balance in supplier ledger: supplied (credit) - paid (debit) = balance owed
+      // When we PAY, it's a DEBIT to the supplier account, reducing the credit balance (owed)
+      const lastBalance = currentLedger.length > 0 ? currentLedger[currentLedger.length - 1].balanceAfter : selectedSupplierForPayment.balance;
+
+      await db.addLedgerEntry({
+        businessId,
+        entityId: selectedSupplierForPayment.id,
+        entityType: 'SUPPLIER',
+        type: 'DEBIT', // Paying reduces debt
+        amount: amount,
+        balanceAfter: newBalance,
+        description: `Payment to ${selectedSupplierForPayment.name} - ${paymentMethod}${paymentReference ? ` (Ref: ${paymentReference})` : ''}`,
+        timestamp: new Date().toISOString()
+      });
+
+      // 3. Optional: Add as an expense
+      await db.addExpense({
+        businessId,
+        shopId: (db.getActiveShopId() || ''),
+        category: 'SUPPLIER_PAYMENT',
+        amount: amount,
+        description: `Payment to supplier: ${selectedSupplierForPayment.name}`,
+        date: new Date().toISOString().split('T')[0],
+        paymentMethod: paymentMethod,
+        recordedBy: user.name
+      });
+
+      setIsPaymentModalOpen(false);
+      setPaymentAmount('');
+      setPaymentReference('');
+      setSelectedSupplierForPayment(null);
+      
+      const freshSuppliers = await db.getSuppliers(businessId);
+      setSuppliers(freshSuppliers);
+      
+      alert(`Payment of ${formatCurrency(amount)} recorded successfully.`);
+    } catch (err) {
+      console.error('Failed to record payment:', err);
+      alert('Failed to record payment. Please try again.');
+    }
+  };
+
+  const formatCurrency = (amount: number | undefined | null) => {
+    const currency = businessProfile?.currency || 'KSh';
+    if (amount === undefined || amount === null) return `${currency}0`;
+    return `${currency}${amount.toLocaleString()}`;
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-ink">Suppliers & Vendors</h2>
+          <p className="text-sm text-muted">Manage your supply chain and vendor accounts</p>
+        </div>
+        <div className="flex items-center flex-wrap gap-2">
+          <div className="flex bg-white border border-border p-1 rounded-xl shadow-sm">
+            <button
+              onClick={() => setViewMode('CARDS')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'CARDS' ? 'bg-indigo-600 text-white shadow-md' : 'text-muted hover:bg-muted'}`}
+            >
+              Cards
+            </button>
+            <button
+              onClick={() => setViewMode('TABLE')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${viewMode === 'TABLE' ? 'bg-indigo-600 text-white shadow-md' : 'text-muted hover:bg-muted'}`}
+            >
+              Table
+            </button>
+          </div>
+          <button
+            onClick={() => setFilterCreditors(!filterCreditors)}
+            className={`flex items-center gap-2 px-6 py-3 border font-bold rounded-2xl transition-all shadow-sm ${
+              filterCreditors 
+                ? 'bg-rose-500 border-rose-500 text-white' 
+                : 'bg-white border-border text-ink hover:bg-muted'
+            }`}
+          >
+            <Filter className="w-5 h-5" />
+            {filterCreditors ? 'Showing Creditors' : 'Filter Creditors'}
+          </button>
+          <button
+            onClick={handleDownloadCSV}
+            className="flex items-center gap-2 px-6 py-3 bg-white border border-border text-ink font-bold rounded-2xl shadow-sm hover:bg-muted transition-all"
+          >
+            <Download className="w-5 h-5" />
+            Download CSV
+          </button>
+          <button
+            onClick={() => {
+              setEditingSupplier(null);
+              resetForm();
+              setIsModalOpen(true);
+            }}
+            className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white font-bold rounded-2xl shadow-lg hover:bg-indigo-700 transition-all"
+          >
+            <Plus className="w-5 h-5" />
+            Add Supplier
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-card p-6 rounded-3xl border border-border shadow-sm">
+          <div className="flex items-center gap-4 mb-2">
+            <div className="p-3 bg-indigo-500/10 rounded-2xl text-indigo-500">
+              <Truck className="w-6 h-6" />
+            </div>
+            <span className="text-sm font-bold text-muted uppercase">Total Suppliers</span>
+          </div>
+          <p className="text-3xl font-bold text-ink">{suppliers.length}</p>
+        </div>
+        
+        <button 
+          onClick={() => setFilterCreditors(!filterCreditors)}
+          className={`bg-card p-6 rounded-3xl border shadow-sm text-left transition-all ${filterCreditors ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-border'}`}
+        >
+          <div className="flex items-center gap-4 mb-2">
+            <div className={`p-3 rounded-2xl ${filterCreditors ? 'bg-rose-500 text-white' : 'bg-rose-500/10 text-rose-500'}`}>
+              <DollarSign className="w-6 h-6" />
+            </div>
+            <span className="text-sm font-bold text-muted uppercase">Total Balance Owed</span>
+          </div>
+          <p className="text-3xl font-bold text-rose-500">
+            {formatCurrency(suppliers.reduce((sum, s) => sum + s.balance, 0))}
+          </p>
+          {filterCreditors && (
+            <p className="text-[10px] text-rose-500 font-bold mt-2 uppercase">Filtering Creditors Only</p>
+          )}
+        </button>
+
+        <div className="bg-card p-6 rounded-3xl border border-border shadow-sm">
+          <div className="flex items-center gap-4 mb-2">
+            <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-500">
+              <History className="w-6 h-6" />
+            </div>
+            <span className="text-sm font-bold text-muted uppercase">Total Supplied</span>
+          </div>
+          <p className="text-3xl font-bold text-ink">
+            {formatCurrency(suppliers.reduce((sum, s) => sum + s.totalSupplied, 0))}
+          </p>
+        </div>
+
+        <div className="bg-card p-6 rounded-3xl border border-border shadow-sm">
+          <div className="flex items-center gap-4 mb-2">
+            <div className="p-3 bg-violet-500/10 rounded-2xl text-violet-500">
+              <History className="w-6 h-6" />
+            </div>
+            <span className="text-sm font-bold text-muted uppercase">Creditors</span>
+          </div>
+          <p className="text-3xl font-bold text-ink">
+            {suppliers.filter(s => s.balance > 0).length}
+          </p>
+        </div>
+      </div>
+
+      <div className="bg-card border border-border rounded-3xl shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-border flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="relative max-w-md w-full">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted w-5 h-5" />
+            <input
+              type="text"
+              placeholder="Search suppliers by name, contact or category..."
+              className="w-full pl-12 pr-4 py-3 bg-bg border border-border text-ink rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div className="text-xs font-bold text-muted uppercase">
+            Showing {filteredSuppliers.length} of {suppliers.length} vendors
+          </div>
+        </div>
+
+        {viewMode === 'TABLE' ? (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-bg text-left border-b border-border">
+                  <th className="px-6 py-4 text-xs font-black text-muted uppercase tracking-widest whitespace-nowrap">Vendor Name</th>
+                  <th className="px-6 py-4 text-xs font-black text-muted uppercase tracking-widest whitespace-nowrap">Category</th>
+                  <th className="px-6 py-4 text-xs font-black text-muted uppercase tracking-widest whitespace-nowrap">Contact</th>
+                  <th className="px-6 py-4 text-xs font-black text-muted uppercase tracking-widest whitespace-nowrap">Supplied</th>
+                  <th className="px-6 py-4 text-xs font-black text-muted uppercase tracking-widest whitespace-nowrap">Balance</th>
+                  <th className="px-6 py-4 text-xs font-black text-muted uppercase tracking-widest whitespace-nowrap">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filteredSuppliers.map((supplier) => (
+                  <tr key={supplier.id} className="hover:bg-muted/30 transition-colors group">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-indigo-600 text-white rounded-lg flex items-center justify-center font-bold text-sm">
+                          {supplier.name.charAt(0)}
+                        </div>
+                        <span className="font-bold text-ink">{supplier.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="px-2 py-1 bg-indigo-500/10 text-indigo-600 text-[10px] font-bold rounded-lg uppercase">
+                        {supplier.category || 'General'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-ink">{supplier.phone}</span>
+                        <span className="text-xs text-muted">{supplier.contactPerson}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 font-bold text-sm text-ink">
+                      {formatCurrency(supplier.totalSupplied)}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`font-black text-sm ${supplier.balance > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                        {formatCurrency(supplier.balance)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {supplier.balance > 0 && (
+                          <button 
+                            onClick={() => {
+                              setSelectedSupplierForPayment(supplier);
+                              setPaymentAmount(supplier.balance.toString());
+                              setIsPaymentModalOpen(true);
+                            }}
+                            className="p-1.5 text-emerald-600 hover:bg-emerald-500/10 rounded-lg transition-all"
+                            title="Record Payment"
+                          >
+                            <DollarSign className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button 
+                          onClick={() => onViewLedger(supplier.id)}
+                          className="p-1.5 text-indigo-600 hover:bg-indigo-500/10 rounded-lg transition-all"
+                          title="View Ledger"
+                        >
+                          <BookOpen className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleEdit(supplier)}
+                          className="p-1.5 text-indigo-600 hover:bg-indigo-600/10 rounded-lg transition-all"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setSupplierToDelete(supplier.id);
+                            setIsDeleteConfirmOpen(true);
+                          }}
+                          className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
+            {filteredSuppliers.map((supplier) => (
+              <div key={supplier.id} className="bg-bg/50 border border-border rounded-3xl p-6 hover:shadow-lg transition-all group">
+                <div className="flex items-start justify-between mb-4">
+                <div className="w-12 h-12 bg-indigo-600 text-white rounded-2xl flex items-center justify-center font-bold text-xl shadow-lg">
+                  {supplier.name.charAt(0)}
+                </div>
+                <div className="flex flex-col items-end">
+                  <span className="px-2 py-1 bg-indigo-500/10 text-indigo-500 text-[10px] font-bold rounded-lg uppercase">
+                    {supplier.category || 'General'}
+                  </span>
+                  <p className="text-[10px] text-muted mt-1 font-bold">Since {format(new Date(supplier.createdAt), 'MMM yyyy')}</p>
+                </div>
+              </div>
+
+              <h3 className="text-lg font-bold text-ink mb-1">{supplier.name}</h3>
+              <div className="flex items-center gap-2 text-sm text-muted mb-4">
+                <User className="w-3 h-3" />
+                {supplier.contactPerson || 'No contact person'}
+              </div>
+
+            <div className="space-y-2 mb-4">
+              <a 
+                href={`tel:${supplier.phone}`}
+                className="flex items-center gap-3 text-sm text-muted hover:text-indigo-500 transition-colors"
+              >
+                <Phone className="w-4 h-4 text-indigo-500" />
+                {supplier.phone}
+              </a>
+              {supplier.email && (
+                <a 
+                  href={`mailto:${supplier.email}`}
+                  className="flex items-center gap-3 text-sm text-muted hover:text-indigo-500 transition-colors"
+                >
+                  <Mail className="w-4 h-4 text-indigo-500" />
+                  {supplier.email}
+                </a>
+              )}
+            </div>
+
+              {supplier.suppliedProducts && supplier.suppliedProducts.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-[10px] font-bold text-muted uppercase mb-2">Supplied Products</p>
+                  <div className="flex flex-wrap gap-1">
+                    {supplier.suppliedProducts.map((p, i) => (
+                      <span key={i} className="px-2 py-0.5 bg-bg border border-border text-[10px] text-ink rounded-md">
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4 p-4 bg-card rounded-2xl border border-border mb-6">
+                <div>
+                  <p className="text-[10px] font-bold text-muted uppercase mb-1">Total Supplied</p>
+                  <p className="text-sm font-bold text-ink">{formatCurrency(supplier.totalSupplied)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-muted uppercase mb-1">Balance Owed</p>
+                  <p className={`text-sm font-bold ${supplier.balance > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                    {formatCurrency(supplier.balance)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                {supplier.balance > 0 && (
+                  <button 
+                    onClick={() => {
+                      setSelectedSupplierForPayment(supplier);
+                      setPaymentAmount(supplier.balance.toString());
+                      setIsPaymentModalOpen(true);
+                    }}
+                    className="flex-1 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20"
+                  >
+                    <DollarSign className="w-3 h-3" />
+                    Pay
+                  </button>
+                )}
+                <button 
+                  onClick={() => onViewLedger(supplier.id)}
+                  className="flex-1 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                >
+                  <BookOpen className="w-3 h-3" />
+                  Ledger
+                </button>
+                <button 
+                  onClick={() => handleEdit(supplier)}
+                  className="p-2 bg-bg border border-border text-indigo-600 rounded-xl hover:bg-indigo-500/10 transition-all"
+                >
+                  <Edit2 className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={() => {
+                    setSupplierToDelete(supplier.id);
+                    setIsDeleteConfirmOpen(true);
+                  }}
+                  className="p-2 bg-bg border border-border text-rose-500 rounded-xl hover:bg-rose-500/10 transition-all"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+          {filteredSuppliers.length === 0 && (
+            <div className="col-span-full py-12 text-center text-muted">
+              No suppliers found matching your search.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+
+      {/* Record Payment Modal */}
+      {isPaymentModalOpen && selectedSupplierForPayment && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-card border border-border rounded-3xl w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-border flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-ink">Record Payment</h3>
+                <p className="text-xs text-muted font-bold uppercase mt-1">To: {selectedSupplierForPayment.name}</p>
+              </div>
+              <button 
+                onClick={() => {
+                  setIsPaymentModalOpen(false);
+                  setSelectedSupplierForPayment(null);
+                }} 
+                className="text-muted hover:text-ink w-8 h-8 flex items-center justify-center bg-bg rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleRecordPayment} className="p-6 space-y-6">
+              <div className="p-4 bg-rose-500/5 border border-rose-500/20 rounded-2xl">
+                <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Current Balance Owed</p>
+                <p className="text-2xl font-black text-rose-500">{formatCurrency(selectedSupplierForPayment.balance)}</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-muted uppercase tracking-wider">Payment Amount</label>
+                  <div className="relative">
+                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted font-bold">
+                      {businessProfile?.currency || 'KSh'}
+                    </div>
+                    <input
+                      type="number"
+                      required
+                      step="0.01"
+                      className="w-full pl-14 pr-4 py-3 bg-bg border border-border text-ink rounded-2xl text-lg font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                      value={paymentAmount}
+                      onChange={(e) => setPaymentAmount(e.target.value)}
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-muted uppercase tracking-wider">Payment Method</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {['CASH', 'MPESA', 'CARD'].map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setPaymentMethod(m as any)}
+                        className={`py-2 text-[10px] font-black rounded-xl border transition-all ${
+                          paymentMethod === m 
+                            ? 'bg-emerald-600 border-emerald-600 text-white shadow-md' 
+                            : 'bg-white border-border text-muted hover:bg-muted'
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-muted uppercase tracking-wider">Reference (Optional)</label>
+                  <input
+                    type="text"
+                    className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-medium"
+                    value={paymentReference}
+                    onChange={(e) => setPaymentReference(e.target.value)}
+                    placeholder="e.g. M-Pesa Ref or Check No."
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPaymentModalOpen(false);
+                    setSelectedSupplierForPayment(null);
+                  }}
+                  className="flex-1 py-3 border border-border text-ink font-bold rounded-2xl hover:bg-muted transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-[2] py-3 bg-emerald-600 text-white font-bold rounded-2xl shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2"
+                >
+                  <DollarSign className="w-5 h-5" />
+                  Record Payment
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Edit Supplier Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-card border border-border rounded-3xl w-full max-w-2xl shadow-2xl my-8">
+            <div className="p-6 border-b border-border flex items-center justify-between sticky top-0 bg-card z-10">
+              <h3 className="text-xl font-bold text-ink">{editingSupplier ? 'Edit Supplier' : 'Add New Supplier'}</h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-muted hover:text-ink">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-6 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-muted uppercase">Business Name</label>
+                    <input
+                      type="text"
+                      required
+                      className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="e.g. Acme Supplies Ltd"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-muted uppercase">Contact Person</label>
+                      <input
+                        type="text"
+                        className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                        value={formData.contactPerson || ''}
+                        onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
+                        placeholder="Full Name"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-muted uppercase">Category</label>
+                      <input
+                        type="text"
+                        className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                        value={formData.category || ''}
+                        onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                        placeholder="e.g. Electronics"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-muted uppercase">Phone Number</label>
+                      <input
+                        type="tel"
+                        required
+                        className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                        value={formData.phone}
+                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        placeholder="07..."
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-muted uppercase flex items-center justify-between">
+                        Email Address
+                        <span className="text-[10px] lowercase normal-case opacity-50 font-normal italic">Optional</span>
+                      </label>
+                      <input
+                        type="email"
+                        className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                        value={formData.email || ''}
+                        onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                        placeholder="vendor@example.com"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-muted uppercase">Physical Address</label>
+                    <textarea
+                      className="w-full px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-h-[80px]"
+                      value={formData.address || ''}
+                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                      placeholder="Street, Building, City"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="p-4 bg-bg border border-border rounded-2xl space-y-4">
+                    <h4 className="text-sm font-bold text-ink uppercase tracking-wider border-b border-border pb-2">Financials</h4>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-muted uppercase">Total Supplied ({businessProfile?.currency || 'KSh'})</label>
+                        <input
+                          type="number"
+                          className="w-full px-4 py-2.5 bg-card border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                          value={formData.totalSupplied || 0}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            setFormData(prev => ({ ...prev, totalSupplied: isNaN(val) ? 0 : val }));
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-muted uppercase">Total Paid ({businessProfile?.currency || 'KSh'})</label>
+                        <input
+                          type="number"
+                          className="w-full px-4 py-2.5 bg-card border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                          value={formData.totalPaid || 0}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            setFormData(prev => ({ ...prev, totalPaid: isNaN(val) ? 0 : val }));
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-muted uppercase">Balance Owed ({businessProfile?.currency || 'KSh'})</label>
+                        <input
+                          type="number"
+                          readOnly
+                          className="w-full px-4 py-2.5 bg-muted/30 border border-border text-muted rounded-xl outline-none cursor-not-allowed"
+                          value={formData.balance || 0}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-muted uppercase">Supplied Products</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        className="flex-1 px-4 py-2.5 bg-bg border border-border text-ink rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                        value={newProduct}
+                        onChange={(e) => setNewProduct(e.target.value)}
+                        placeholder="Add product name..."
+                        onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addProduct())}
+                      />
+                      <button
+                        type="button"
+                        onClick={addProduct}
+                        className="p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all"
+                      >
+                        <Plus className="w-6 h-6" />
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {formData.suppliedProducts?.map((product, index) => (
+                        <span key={index} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 text-indigo-600 text-xs font-bold rounded-xl border border-indigo-500/20">
+                          {product}
+                          <button type="button" onClick={() => removeProduct(index)} className="hover:text-rose-500">
+                            <Plus className="w-4 h-4 rotate-45" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-lg hover:bg-indigo-700 transition-all"
+              >
+                {editingSupplier ? 'Update Supplier' : 'Save Supplier'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={isDeleteConfirmOpen}
+        onClose={() => {
+          setIsDeleteConfirmOpen(false);
+          setSupplierToDelete(null);
+        }}
+        onConfirm={handleDelete}
+        title="Delete Supplier?"
+        message="Are you sure you want to delete this supplier? This action cannot be undone and will remove all associated records."
+        itemName={suppliers.find(s => s.id === supplierToDelete)?.name}
+      />
+    </div>
+  );
+};
