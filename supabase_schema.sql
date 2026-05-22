@@ -18,90 +18,127 @@ create extension if not exists "uuid-ossp";
 -- =========================================================================
 --             0. DYNAMIC DUAL-SUPPORT MIGRATE: DROP ALL CONSTRAINTS & CONVERT UUIDs TO TEXT
 -- =========================================================================
--- We dynamically find and drop all foreign key constraints for target tables,
--- allowing us to convert any existing uuid/int ID/foreign-key columns to text.
--- This ensures client-generated alphanumeric keys do not trigger type mismatch errors.
+-- We dynamically find and drop all foreign key constraints in the public schema
+-- pointing to or from our tables. This allows us to convert existing uuid/int ID 
+-- and foreign key columns to text, accommodating hybrid client-generated keys.
+-- After modifying types to text, we safely re-connect the foreign keys.
 -- =========================================================================
 do $$
 declare
     r record;
 begin
-    -- Find and drop all existing foreign keys for target tables
-    for r in (
-        select 
-            tc.table_name, 
-            tc.constraint_name
-        from 
-            information_schema.table_constraints as tc 
-            join information_schema.key_column_usage as kcu
-              on tc.constraint_name = kcu.constraint_name
-              and tc.table_schema = kcu.table_schema
-        where 
-            tc.constraint_type = 'FOREIGN KEY' 
-            and tc.table_schema = 'public'
-            and tc.table_name in (
-                'businesses', 'shops', 'products', 'sales', 'customers', 
-                'suppliers', 'expenses', 'employees', 'attendance', 
-                'payroll', 'debts', 'ledger'
-            )
-    ) loop
-        execute format('alter table public.%I drop constraint if exists %I', r.table_name, r.constraint_name);
-    end loop;
-end;
-$$;
+    -- 1. Create a temporary table to track relationships that need to be drop-converted-rebound
+    create temp table if not exists temp_fkeys (
+        constraint_name text,
+        source_table text,
+        source_column text,
+        referenced_table text,
+        referenced_column text
+    ) on commit drop;
+    
+    truncate temp_fkeys;
 
--- Convert existing tables columns from UUID/INT to TEXT to support hybrid alphanumeric keys
-do $$
-declare
-    t text;
-    c text;
-    tables_cols text[][] := array[
-        array['businesses', 'id'],
-        array['shops', 'id'],
-        array['shops', 'business_id'],
-        array['products', 'id'],
-        array['products', 'business_id'],
-        array['products', 'shop_id'],
-        array['sales', 'id'],
-        array['sales', 'business_id'],
-        array['sales', 'shop_id'],
-        array['sales', 'customer_id'],
-        array['customers', 'id'],
-        array['customers', 'business_id'],
-        array['suppliers', 'id'],
-        array['suppliers', 'business_id'],
-        array['expenses', 'id'],
-        array['expenses', 'business_id'],
-        array['expenses', 'shop_id'],
-        array['employees', 'id'],
-        array['employees', 'business_id'],
-        array['employees', 'shop_id'],
-        array['attendance', 'id'],
-        array['attendance', 'employee_id'],
-        array['payroll', 'id'],
-        array['payroll', 'employee_id'],
-        array['debts', 'id'],
-        array['debts', 'business_id'],
-        array['debts', 'shop_id'],
-        array['debts', 'customer_id'],
-        array['debts', 'sale_id'],
-        array['ledger', 'id'],
-        array['ledger', 'business_id'],
-        array['ledger', 'shop_id']
-    ];
-begin
-    for i in 1 .. array_upper(tables_cols, 1) loop
-        t := tables_cols[i][1];
-        c := tables_cols[i][2];
-        if exists (
-            select 1 
-            from information_schema.columns 
-            where table_schema = 'public' 
-              and table_name = t 
-              and column_name = c
-        ) then
-            execute format('alter table public.%I alter column %I type text using %I::text', t, c, c);
-        end if;
+    -- 2. Find any foreign keys pointing to or from SimbaPOS / Uzalynx tables in the public schema
+    insert into temp_fkeys
+    select distinct
+        tc.constraint_name,
+        kcu.table_name as source_table,
+        kcu.column_name as source_column,
+        ccu.table_name as referenced_table,
+        ccu.column_name as referenced_column
+    from 
+        information_schema.table_constraints as tc 
+        join information_schema.key_column_usage as kcu
+          on tc.constraint_name = kcu.constraint_name
+          and tc.table_schema = kcu.table_schema
+        join information_schema.constraint_column_usage as ccu
+          on ccu.constraint_name = tc.constraint_name
+          and ccu.table_schema = tc.table_schema
+    where 
+        tc.constraint_type = 'FOREIGN KEY'
+        and tc.table_schema = 'public'
+        and (
+            tc.table_name in ('businesses', 'shops', 'products', 'sales', 'customers', 'suppliers', 'expenses', 'employees', 'attendance', 'payroll', 'debts', 'ledger')
+            or ccu.table_name in ('businesses', 'shops', 'products', 'sales', 'customers', 'suppliers', 'expenses', 'employees', 'attendance', 'payroll', 'debts', 'ledger')
+        );
+
+    -- 3. Safely drop all discovered foreign key constraints
+    for r in (select * from temp_fkeys) loop
+        execute format('alter table public.%I drop constraint if exists %I', r.source_table, r.constraint_name);
+    end loop;
+
+    -- 4. Convert all columns involved in those foreign keys to text (both source and referenced)
+    for r in (select distinct source_table, source_column from temp_fkeys) loop
+        execute format('alter table public.%I alter column %I type text using %I::text', r.source_table, r.source_column, r.source_column);
+    end loop;
+    
+    for r in (select distinct referenced_table, referenced_column from temp_fkeys) loop
+        execute format('alter table public.%I alter column %I type text using %I::text', r.referenced_table, r.referenced_column, r.referenced_column);
+    end loop;
+
+    -- 5. Force-convert our specific schemas columns to text (even if they have no active foreign key relationships yet)
+    declare
+        t text;
+        c text;
+        tables_cols text[][] := array[
+            array['businesses', 'id'],
+            array['shops', 'id'],
+            array['shops', 'business_id'],
+            array['products', 'id'],
+            array['products', 'business_id'],
+            array['products', 'shop_id'],
+            array['sales', 'id'],
+            array['sales', 'business_id'],
+            array['sales', 'shop_id'],
+            array['sales', 'customer_id'],
+            array['customers', 'id'],
+            array['customers', 'business_id'],
+            array['suppliers', 'id'],
+            array['suppliers', 'business_id'],
+            array['expenses', 'id'],
+            array['expenses', 'business_id'],
+            array['expenses', 'shop_id'],
+            array['employees', 'id'],
+            array['employees', 'business_id'],
+            array['employees', 'shop_id'],
+            array['attendance', 'id'],
+            array['attendance', 'employee_id'],
+            array['payroll', 'id'],
+            array['payroll', 'employee_id'],
+            array['debts', 'id'],
+            array['debts', 'business_id'],
+            array['debts', 'shop_id'],
+            array['debts', 'customer_id'],
+            array['debts', 'sale_id'],
+            array['ledger', 'id'],
+            array['ledger', 'business_id'],
+            array['ledger', 'shop_id']
+        ];
+    begin
+        for i in 1 .. array_upper(tables_cols, 1) loop
+            t := tables_cols[i][1];
+            c := tables_cols[i][2];
+            if exists (
+                select 1 
+                from information_schema.columns 
+                where table_schema = 'public' 
+                  and table_name = t 
+                  and column_name = c
+            ) then
+                execute format('alter table public.%I alter column %I type text using %I::text', t, c, c);
+            end if;
+        end loop;
+    end;
+
+    -- 6. Safely re-establish the foreign key constraints with matching "text" types
+    for r in (select * from temp_fkeys) loop
+        begin
+            execute format('alter table public.%I add constraint %I foreign key (%I) references public.%I(%I) on delete cascade', 
+                r.source_table, r.constraint_name, r.source_column, r.referenced_table, r.referenced_column);
+        exception when others then
+            -- Fallback or log if constraint cannot be rebound immediately
+            raise notice 'Could not automatically restore foreign key % on %.%: %', r.constraint_name, r.source_table, r.source_column, SQLERRM;
+        end;
     end loop;
 end;
 $$;
