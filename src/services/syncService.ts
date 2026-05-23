@@ -36,6 +36,7 @@ class SyncService {
   private syncLogs: SyncLog[] = [];
   private listeners: Set<(stats: SyncStats) => void> = new Set();
   private intervalId: any = null;
+  private lastConnectionError: string = '';
 
   public getBaseUrl(): string {
     const saved = localStorage.getItem('dmi_pos_sync_server_url');
@@ -150,6 +151,7 @@ class SyncService {
   public async checkConnectivity(): Promise<boolean> {
     if (!navigator.onLine) {
       this.updateOnlineStatus(false);
+      this.lastConnectionError = 'Device feels offline (navigator.onLine is false)';
       return false;
     }
 
@@ -157,9 +159,18 @@ class SyncService {
       const response = await this.getApiClient().get('/api/health', { timeout: 4000 });
       const online = response.status === 200;
       this.updateOnlineStatus(online);
+      if (online) {
+        this.lastConnectionError = '';
+      } else {
+        this.lastConnectionError = `Server returned status ${response.status}`;
+      }
       return online;
-    } catch (e) {
+    } catch (e: any) {
       this.updateOnlineStatus(false);
+      this.lastConnectionError = e.response
+        ? `HTTP ${e.response.status}: ${e.response.statusText || 'Error response'}`
+        : e.message || 'API Timeout / Connection Refused';
+      console.warn('Connectivity healthcheck failed for URL:', this.getBaseUrl(), this.lastConnectionError);
       return false;
     }
   }
@@ -194,7 +205,8 @@ class SyncService {
     
     const online = await this.checkConnectivity();
     if (!online) {
-      this.addLog('ERROR', 'Sync failed: Server is unreachable. Check your internet connection.');
+      const reason = this.lastConnectionError ? ` - ${this.lastConnectionError}` : '';
+      this.addLog('ERROR', `Sync failed: Server URL (${this.getBaseUrl()}) is unreachable${reason}. check connection or configure server url.`);
       return false;
     }
 
