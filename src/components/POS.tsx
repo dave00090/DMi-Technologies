@@ -39,6 +39,7 @@ import { useHardwareScanner } from '../hooks/useHardwareScanner';
 import { PaymentMethod } from '../types';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { SafeImage } from './SafeImage';
+import { printElement } from '../lib/printUtils';
 
 import { getLocal, setLocal, removeLocal } from '../services/localDb';
 import { syncService } from '../services/syncService';
@@ -344,44 +345,13 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
   }, [showReceipt, isAutoPrinting, lastSale]);
 
   const handlePrint = (autoClose = false) => {
-    window.focus();
-    document.body.classList.add('printing-receipt');
-    
-    setTimeout(() => {
-      try {
-        window.print();
-        document.body.classList.remove('printing-receipt');
-        if (autoClose) {
-          setTimeout(() => {
-            setShowReceipt(false);
-            setIsAutoPrinting(false);
-          }, 500);
-        }
-      } catch (err) {
-        console.error('Print failed:', err);
-        document.body.classList.remove('printing-receipt');
-        const printContent = document.getElementById('print-receipt');
-        if (printContent) {
-          const printWindow = window.open('', '_blank');
-          if (printWindow) {
-            printWindow.document.write('<html><head><title>Print Receipt</title>');
-            const styles = document.querySelectorAll('style, link[rel="stylesheet"]');
-            styles.forEach(style => {
-              printWindow.document.write(style.outerHTML);
-            });
-            printWindow.document.write('</head><body>');
-            printWindow.document.write(printContent.innerHTML);
-            printWindow.document.write('</body></html>');
-            printWindow.document.close();
-            printWindow.focus();
-            setTimeout(() => {
-              printWindow.print();
-              printWindow.close();
-            }, 250);
-          }
-        }
-      }
-    }, 100);
+    const success = printElement('print-receipt', true);
+    if (success && autoClose) {
+      setTimeout(() => {
+        setShowReceipt(false);
+        setIsAutoPrinting(false);
+      }, 800);
+    }
   };
 
   const formatCurrency = (amount: number) => {
@@ -508,7 +478,11 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
   const total = Math.max(0, subtotal - discountAmount);
 
   const handleCheckout = async () => {
-    if (cart.length === 0 || isProcessing) return;
+    if (cart.length === 0) {
+      setError("PLEASE ADD PRODUCTS TO THE CART BEFORE COMPLETING A SALE");
+      return;
+    }
+    if (isProcessing) return;
     
     setIsProcessing(true);
     setError(null);
@@ -753,15 +727,13 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
               />
               
               {/* Search Results Overlay / Product Browser */}
-              {(searchTerm || !cart.length) && (
+              {searchTerm && (
                 <div className="absolute top-full left-0 right-0 mt-3 bg-white border-2 border-slate-200 rounded-2xl shadow-2xl z-[100] max-h-[70vh] overflow-y-auto animate-in slide-in-from-top-2 duration-200">
                   <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                     <p className="text-xs font-black uppercase tracking-widest text-slate-400">
-                      {searchTerm ? `Search Results (${filteredProducts.length})` : 'Quick Add Products'}
+                      Search Results ({filteredProducts.length})
                     </p>
-                    {searchTerm && (
-                      <button onClick={() => setSearchTerm('')} className="text-xs font-bold text-indigo-600 hover:underline">Clear Search</button>
-                    )}
+                    <button onClick={() => setSearchTerm('')} className="text-xs font-bold text-indigo-600 hover:underline">Clear Search</button>
                   </div>
                   
                   {filteredProducts.length === 0 ? (
@@ -770,8 +742,8 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
                       <p className="text-slate-400 font-bold">No products found matching "{searchTerm}"</p>
                     </div>
                   ) : (
-                    <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {filteredProducts.slice(0, 24).map(product => {
+                    <div className="p-2 flex flex-col gap-1.5">
+                      {filteredProducts.slice(0, 15).map(product => {
                         const totalStock = product.variants.reduce((sum, v) => sum + v.stock, 0);
                         return (
                           <button
@@ -784,22 +756,23 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
                                 setSelectedProduct(product);
                               }
                             }}
-                            className="flex flex-col p-4 bg-white border-2 border-slate-100 hover:border-indigo-500 rounded-2xl transition-all text-left group hover:shadow-lg active:scale-95"
+                            className="flex items-center justify-between p-3.5 bg-white border border-slate-150 hover:border-indigo-500 rounded-xl hover:bg-slate-50/50 transition-all text-left active:scale-[0.99] group"
                           >
-                            <div className="flex items-center gap-4 mb-3">
-                              <div className="w-16 h-16 bg-slate-50 rounded-xl border-2 border-slate-100 flex items-center justify-center overflow-hidden shrink-0 group-hover:bg-indigo-50 group-hover:border-indigo-100 transition-colors">
-                                <SafeImage src={product.imageUrl} alt={product.name} className="w-full h-full object-contain" fallback={<Package className="w-8 h-8 text-slate-200" />} />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-black text-ink text-base leading-tight truncate">{product.name}</p>
-                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{product.brand || product.category}</p>
-                              </div>
+                            <div className="min-w-0 flex-1 pr-4">
+                              <p className="font-extrabold text-ink text-sm sm:text-base leading-snug group-hover:text-indigo-600 transition-colors truncate">{product.name}</p>
+                              <p className="text-[10px] text-slate-400 font-extrabold uppercase mt-0.5 tracking-wider">
+                                {product.brand || product.category} {product.variants.find(v => v.sku)?.sku ? `• SKU: ${product.variants.find(v => v.sku)?.sku}` : ''}
+                              </p>
                             </div>
-                            <div className="mt-auto flex items-center justify-between pt-3 border-t border-slate-50">
-                              <p className="font-black text-indigo-600 text-lg">{formatCurrency(product.type === 'SERVICE' ? (product.sellingPrice || product.basePrice || 0) : (product.sellingPrice || product.basePrice || 0))}</p>
-                              <div className={`px-2 py-1 rounded text-[9px] font-black uppercase ${product.type === 'SERVICE' ? 'bg-indigo-50 text-indigo-600' : (totalStock <= 0 ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500')}`}>
-                                {product.type === 'SERVICE' ? 'Service' : (totalStock <= 0 ? 'Out of Stock' : `Stock: ${totalStock}`)}
+                            <div className="flex items-center gap-4 shrink-0">
+                              <div className="text-right">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase inline-block ${product.type === 'SERVICE' ? 'bg-indigo-50 text-indigo-600' : (totalStock <= 0 ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500')}`}>
+                                  {product.type === 'SERVICE' ? 'Service' : (totalStock <= 0 ? 'Out of Stock' : `Stock: ${totalStock}`)}
+                                </span>
                               </div>
+                              <p className="font-black text-indigo-600 text-sm sm:text-base min-w-[70px] text-right">
+                                {formatCurrency(product.type === 'SERVICE' ? (product.sellingPrice || product.basePrice || 0) : (product.sellingPrice || product.basePrice || 0))}
+                              </p>
                             </div>
                           </button>
                         );
@@ -1097,25 +1070,27 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
                   <button onClick={() => setShowDiscountInput(false)} className="p-3 text-slate-400"><X className="w-5 h-5"/></button>
                 </div>
               ) : paymentMethod === 'MPESA' ? (
-                <div className="flex-1 flex flex-col md:flex-row items-center gap-3 w-full">
-                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3 w-full text-left">
-                    <div className="relative">
-                      <div className="absolute left-3 top-2 text-[10px] font-black text-indigo-400 uppercase tracking-tighter">M-Pesa Phone Number</div>
+                <div className="flex-1 grid grid-cols-2 gap-3 w-full">
+                  {/* Left Column: Phone on top, Ref on bottom */}
+                  <div className="flex flex-col gap-3">
+                    <div className="relative h-14 w-full">
+                      <div className="absolute left-3 top-1.5 text-[9px] font-black text-indigo-400 uppercase tracking-tighter z-10">M-Pesa Phone Number</div>
                       <input
                         type="tel"
                         placeholder="07xx xxx xxx"
-                        className="w-full bg-white border-2 border-indigo-200 rounded-xl px-3 pt-5 pb-2 text-indigo-600 font-extrabold text-lg outline-none focus:border-indigo-400"
+                        className="w-full h-full bg-white border-2 border-indigo-200 rounded-xl px-3 pt-4 pb-1 text-indigo-600 font-extrabold text-base outline-none focus:border-indigo-400"
                         value={mpesaPhone}
                         onChange={(e) => setMpesaPhone(e.target.value)}
                         disabled={mpesaStatus === 'WAITING' || isStkLoading}
                       />
                     </div>
-                    <div className="relative">
-                      <div className="absolute left-3 top-2 text-[10px] font-black text-indigo-400 uppercase tracking-tighter">Transaction Ref (Optional)</div>
+                    
+                    <div className="relative h-14 w-full">
+                      <div className="absolute left-3 top-1.5 text-[9px] font-black text-indigo-400 uppercase tracking-tighter z-10">Transaction Ref (Optional)</div>
                       <input
                         type="text"
                         placeholder="M-Pesa Reference"
-                        className="w-full bg-white border-2 border-indigo-200 rounded-xl px-3 pt-5 pb-2 text-indigo-600 font-extrabold text-lg outline-none focus:border-indigo-400"
+                        className="w-full h-full bg-white border-2 border-indigo-200 rounded-xl px-3 pt-4 pb-1 text-indigo-600 font-extrabold text-base outline-none focus:border-indigo-400"
                         value={mpesaConfirmation || ''}
                         onChange={(e) => setMpesaConfirmation(e.target.value)}
                         disabled={mpesaStatus === 'WAITING' || isStkLoading}
@@ -1123,59 +1098,63 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-2">
+                  {/* Right Column: Send Prompt on top, Manual on bottom */}
+                  <div className="flex flex-col gap-3">
                     {/* STK Push Trigger */}
                     <button 
                       onClick={triggerStkPush}
                       disabled={mpesaStatus === 'WAITING' || isStkLoading || mpesaStatus === 'CONFIRMED'}
-                      className={`px-8 py-4 rounded-xl text-xs font-black shadow-lg transition-all flex items-center gap-2 ${
+                      className={`px-4 rounded-xl text-xs font-black shadow-md transition-all flex items-center justify-center gap-2 h-14 w-full ${
                         mpesaStatus === 'CONFIRMED' ? 'bg-emerald-600 text-white' : 
-                        mpesaStatus === 'WAITING' ? 'bg-amber-500 text-white' :
-                        'bg-indigo-600 text-white hover:bg-indigo-700'
+                        mpesaStatus === 'WAITING' ? 'bg-amber-500 text-white animate-pulse' :
+                        'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95'
                       }`}
                     >
                       {isStkLoading ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>SENDING PROMPT...</span>
+                          <span className="truncate">SENDING PROMPT...</span>
                         </>
                       ) : mpesaStatus === 'WAITING' ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>WAITING FOR PIN...</span>
+                          <span className="truncate">WAITING FOR PIN...</span>
                         </>
                       ) : mpesaStatus === 'CONFIRMED' ? (
                         <>
-                          <CheckCircle className="w-4 h-4" />
-                          <span>PAID</span>
+                          <CheckCircle className="w-4 h-4 shrink-0" />
+                          <span className="truncate">PAID</span>
                         </>
                       ) : (
                         <>
-                          <Smartphone className="w-4 h-4" />
-                          <span>SEND PROMPT</span>
+                          <Smartphone className="w-4 h-4 shrink-0" />
+                          <span className="truncate">SEND PROMPT</span>
                         </>
                       )}
                     </button>
 
                     {/* Manual Confirm / Fallback */}
-                    {mpesaStatus !== 'CONFIRMED' && (
-                      <button 
-                        onClick={() => {
-                          if (mpesaPhone.length < 10) {
-                            setError("PLEASE ENTER A VALID PHONE NUMBER");
-                            return;
-                          }
-                          setMpesaStatus('CONFIRMED');
-                          if (!mpesaConfirmation) {
-                            setMpesaConfirmation('Manual Ref: ' + Math.random().toString(36).substring(2, 10).toUpperCase());
-                          }
-                          setSuccess("MPESA PAYMENT CONFIRMED MANUALLY!");
-                        }}
-                        className="px-4 py-4 bg-white border-2 border-slate-200 rounded-xl text-slate-400 font-black text-xs hover:border-indigo-400 hover:text-indigo-400 transition-all uppercase whitespace-nowrap"
-                      >
-                        MANUAL
-                      </button>
-                    )}
+                    <button 
+                      onClick={() => {
+                        if (mpesaPhone.length < 10) {
+                          setError("PLEASE ENTER A VALID PHONE NUMBER");
+                          return;
+                        }
+                        setMpesaStatus('CONFIRMED');
+                        if (!mpesaConfirmation) {
+                          setMpesaConfirmation('Manual Ref: ' + Math.random().toString(36).substring(2, 10).toUpperCase());
+                        }
+                        setSuccess("MPESA PAYMENT CONFIRMED MANUALLY!");
+                      }}
+                      disabled={mpesaStatus === 'CONFIRMED'}
+                      className={`px-4 bg-white border-2 rounded-xl font-black text-xs transition-all uppercase whitespace-nowrap h-14 w-full flex items-center justify-center ${
+                        mpesaStatus === 'CONFIRMED' 
+                          ? 'border-emerald-100 text-emerald-400 bg-emerald-50/20 cursor-not-allowed' 
+                          : 'border-slate-200 text-slate-400 hover:border-indigo-400 hover:text-indigo-600 active:scale-95'
+                      }`}
+                    >
+                      MANUAL
+                    </button>
                   </div>
                 </div>
               ) : (

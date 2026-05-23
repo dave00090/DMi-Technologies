@@ -23,6 +23,7 @@ interface SyncPanelProps {
 export const SyncPanel: React.FC<SyncPanelProps> = ({ isOpen, onClose }) => {
   const [stats, setStats] = useState<SyncStats>(syncService.getStats());
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncUrl, setSyncUrl] = useState(syncService.getBaseUrl());
 
   useEffect(() => {
     // Subscribe to sync service updates
@@ -66,7 +67,7 @@ export const SyncPanel: React.FC<SyncPanelProps> = ({ isOpen, onClose }) => {
                 <Database className="w-5 h-5 animate-pulse" />
               </div>
               <div>
-                <h3 className="text-lg font-black tracking-tight text-ink">SimbaPOS Hybrid Cloud-Sync Monitor</h3>
+                <h3 className="text-lg font-black tracking-tight text-ink">DMi POS Hybrid Cloud-Sync Monitor</h3>
                 <p className="text-xs text-muted">Distributed Branch Sync & Offline Terminal Cache</p>
               </div>
             </div>
@@ -140,6 +141,44 @@ export const SyncPanel: React.FC<SyncPanelProps> = ({ isOpen, onClose }) => {
               </div>
             </div>
 
+            {/* Sync Gateway URL Config */}
+            <div className="p-4 rounded-xl border border-border bg-card/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-muted">Cloud Sync Gateway Server URL</span>
+                {syncService.getBaseUrl() !== window.location.origin && (
+                  <button 
+                    onClick={() => {
+                      syncService.setBaseUrl('');
+                      setSyncUrl(syncService.getBaseUrl());
+                    }} 
+                    className="text-[9px] text-indigo-500 hover:text-indigo-600 font-black uppercase tracking-wider transition-colors"
+                  >
+                    Reset Default
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="https://your-cloud-api-domain.com"
+                  className="flex-1 px-3 py-2 bg-muted text-ink border border-border rounded-lg text-xs outline-none focus:border-indigo-500 font-medium"
+                  value={syncUrl}
+                  onChange={(e) => setSyncUrl(e.target.value)}
+                />
+                <button
+                  onClick={() => {
+                    syncService.setBaseUrl(syncUrl);
+                  }}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs transition-colors shrink-0"
+                >
+                  Save URL
+                </button>
+              </div>
+              <p className="text-[9px] text-muted leading-tight">
+                Enter your internet server URL, LAN server IP, or external domain. Packaged terminal defaults to the live cloud URL.
+              </p>
+            </div>
+
             {/* Action Trigger */}
             <button
               onClick={handleManualSync}
@@ -190,7 +229,7 @@ export const SyncPanel: React.FC<SyncPanelProps> = ({ isOpen, onClose }) => {
             </div>
           </div>
 
-          {/* Footer details of eTIMS / SimbaPOS */}
+          {/* Footer details of eTIMS / DMi POS */}
           <div className="p-4 bg-muted border-t border-border text-center text-[10px] text-muted uppercase tracking-wider">
             eTIMS Signature Integration Enabled • Nairobi Server Gateway
           </div>

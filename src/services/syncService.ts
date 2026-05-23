@@ -37,6 +37,42 @@ class SyncService {
   private listeners: Set<(stats: SyncStats) => void> = new Set();
   private intervalId: any = null;
 
+  public getBaseUrl(): string {
+    const saved = localStorage.getItem('dmi_pos_sync_server_url');
+    if (saved) return saved;
+    
+    // Auto fallback for packaged Electron apps loaded on file:// protocol
+    if (window.location.protocol === 'file:') {
+      return 'https://ais-pre-kayb6z7vprmlkln2iwpxb5-430844239449.europe-west2.run.app';
+    }
+    
+    // Normal browser or local dev fallback
+    return window.location.origin;
+  }
+
+  public setBaseUrl(url: string) {
+    let sanitized = url.trim();
+    if (sanitized && !sanitized.startsWith('http://') && !sanitized.startsWith('https://')) {
+      sanitized = 'http://' + sanitized;
+    }
+    sanitized = sanitized.replace(/\/+$/, ''); // Remove trailing slashes
+    
+    if (sanitized) {
+      localStorage.setItem('dmi_pos_sync_server_url', sanitized);
+    } else {
+      localStorage.removeItem('dmi_pos_sync_server_url');
+    }
+    this.addLog('INFO', `Sync backend server gateway set to: ${sanitized || this.getBaseUrl()}`);
+    this.checkConnectivity();
+  }
+
+  private getApiClient() {
+    return axios.create({
+      baseURL: this.getBaseUrl(),
+      timeout: 10000
+    });
+  }
+
   constructor() {
     this.init();
   }
@@ -118,7 +154,7 @@ class SyncService {
     }
 
     try {
-      const response = await axios.get('/api/health', { timeout: 4000 });
+      const response = await this.getApiClient().get('/api/health', { timeout: 4000 });
       const online = response.status === 200;
       this.updateOnlineStatus(online);
       return online;
@@ -203,7 +239,7 @@ class SyncService {
       let syncedIdsMap: Record<string, string[]> = {};
       if (totalPushRecords > 0) {
         this.addLog('INFO', `Uploading ${totalPushRecords} local transactions and edits to cloud...`);
-        const pushRes = await axios.post('/api/sync/push', {
+        const pushRes = await this.getApiClient().post('/api/sync/push', {
           businessId,
           shopId,
           changes: pushChanges
@@ -238,7 +274,7 @@ class SyncService {
       const since = currentStats.lastSyncTime || '';
       
       this.addLog('INFO', `Pulling cloud updates since ${since || 'creation'}...`);
-      const pullRes = await axios.get('/api/sync/pull', {
+      const pullRes = await this.getApiClient().get('/api/sync/pull', {
         params: { businessId, shopId, since }
       });
 

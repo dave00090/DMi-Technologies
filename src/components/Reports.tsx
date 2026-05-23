@@ -35,6 +35,7 @@ import { db } from '../services/db';
 import { BusinessProfile, Shop, Product, Sale, Payroll } from '../types';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { Receipt } from './Receipt';
+import { printElement } from '../lib/printUtils';
 
 interface ReportsProps {
   businessProfile: BusinessProfile;
@@ -156,31 +157,11 @@ export const Reports: React.FC<ReportsProps> = ({ businessProfile, shop }) => {
   };
 
   const handlePrintReport = () => {
-    window.print();
+    printElement('print-report-container', false);
   };
 
   const handlePrintReceipt = () => {
-    const printContent = document.getElementById('print-receipt');
-    if (printContent) {
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write('<html><head><title>Print Receipt</title>');
-        // Copy styles
-        const styles = document.querySelectorAll('style, link[rel="stylesheet"]');
-        styles.forEach(style => {
-          printWindow.document.write(style.outerHTML);
-        });
-        printWindow.document.write('</head><body>');
-        printWindow.document.write(printContent.innerHTML);
-        printWindow.document.write('</body></html>');
-        printWindow.document.close();
-        printWindow.focus();
-        setTimeout(() => {
-          printWindow.print();
-          printWindow.close();
-        }, 250);
-      }
-    }
+    printElement('print-receipt', true);
   };
 
   const handleShareReceipt = async () => {
@@ -1003,7 +984,7 @@ export const Reports: React.FC<ReportsProps> = ({ businessProfile, shop }) => {
         title="Delete Transaction"
         message="Are you sure you want to delete this transaction? This action cannot be undone."
       />
-      <div ref={reportRef} className="print:p-8">
+      <div ref={reportRef} id="print-report-container" className="print:p-8">
         <div className="hidden print:block mb-8">
           <h1 className="text-2xl font-bold">{businessProfile?.name || 'Business'} - {reportType.toUpperCase()} Report</h1>
           <p className="text-gray-500">Period: {format(new Date(startDate), 'MMM dd, yyyy')} to {format(new Date(endDate), 'MMM dd, yyyy')}</p>

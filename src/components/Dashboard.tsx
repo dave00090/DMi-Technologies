@@ -31,6 +31,7 @@ import {
   Legend,
 } from 'recharts';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
+import { printElement } from '../lib/printUtils';
 
 interface DashboardProps {
   user: UserProfile;
@@ -202,7 +203,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, businessId, shopId }
   };
 
   const handlePrint = () => {
-    window.print();
+    printElement('print-dashboard-container', false);
   };
 
   const handleDeleteAlert = (id: string) => {
@@ -290,7 +291,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, businessId, shopId }
   ];
 
   return (
-    <div className="space-y-8">
+    <div id="print-dashboard-container" className="space-y-8">
       <div className="hidden print:block mb-8">
         <h1 className="text-2xl font-bold">{businessProfile?.name || 'Business'} - Business Overview Report</h1>
         <p className="text-gray-500">Generated on: {format(new Date(), 'MMMM do, yyyy HH:mm')}</p>

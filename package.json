@@ -2,11 +2,11 @@
   "name": "react-example",
   "private": true,
   "version": "1.0.0",
+  "main": "main.cjs",
   "homepage": ".",
   "description": "Premium Retail Point of Sale System",
   "author": "DMi Technologies",
   "type": "module",
-  "main": "main.cjs",
   "scripts": {
     "dev": "tsx server.ts",
     "dev:pure-vite": "vite --port 3000 --host 0.0.0.0",
@@ -41,7 +41,7 @@
     "asar": true,
     "win": {
       "target": "nsis",
-      "icon": "public/app-icon.ico"
+      "icon": "public/app-icon.png"
     },
     "mac": {
       "target": "dmg",
