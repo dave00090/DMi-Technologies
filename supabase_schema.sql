@@ -479,6 +479,15 @@ create table if not exists public.piracy_alerts (
     last_updated timestamp with time zone default timezone('utc'::text, now())
 );
 
+-- ==========================================
+-- 18. CENTRAL HYBRID SYNC STATE TABLE
+-- ==========================================
+create table if not exists public.cloud_sync_state (
+    id text primary key,
+    data jsonb not null,
+    updated_at timestamp with time zone default timezone('utc'::text, now())
+);
+
 -- =========================================================================
 --             UPGRADE PRE-EXISTING TABLES WITH SYNC & ID COLUMNS
 -- =========================================================================
@@ -833,6 +842,7 @@ alter table public.sale_items enable row level security;
 alter table public.licenses enable row level security;
 alter table public.login_history enable row level security;
 alter table public.piracy_alerts enable row level security;
+alter table public.cloud_sync_state enable row level security;
 
 -- Basic policy: Allow authenticated queries (You can modify these to capture standard corporate sub-user business metadata)
 drop policy if exists "Allow all actions for authenticated users" on public.businesses;
@@ -902,6 +912,10 @@ on public.login_history for all to authenticated using (true) with check (true);
 drop policy if exists "Allow all actions for authenticated users" on public.piracy_alerts;
 create policy "Allow all actions for authenticated users" 
 on public.piracy_alerts for all to authenticated using (true) with check (true);
+
+drop policy if exists "Allow all actions for anyone on cloud_sync_state" on public.cloud_sync_state;
+create policy "Allow all actions for anyone on cloud_sync_state" 
+on public.cloud_sync_state for all using (true) with check (true);
 
 
 -- =========================================================================

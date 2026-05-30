@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import fs from 'fs';
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
 
@@ -257,9 +258,43 @@ async function startServer() {
   const DATA_DIR = path.resolve(__dirname, 'data');
   const DB_FILE = path.join(DATA_DIR, 'cloud_db.json');
 
-  // Initialize DB file
-  function initCloudDb() {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+  const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+  const supabaseClient = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+
+  async function loadCloudDbFromSupabase() {
+    if (!supabaseClient) {
+      console.warn('Supabase config missing on server, skipping central cloud recovery.');
+      return;
+    }
     try {
+      console.log('Restoring master cloud sync database from Supabase...');
+      const { data, error } = await supabaseClient
+        .from('cloud_sync_state')
+        .select('data')
+        .eq('id', 'central_db')
+        .single();
+      
+      if (data && data.data) {
+        if (!fs.existsSync(DATA_DIR)) {
+          fs.mkdirSync(DATA_DIR, { recursive: true });
+        }
+        fs.writeFileSync(DB_FILE, JSON.stringify(data.data, null, 2), 'utf8');
+        console.log('Successfully loaded and recovered cloud sync database from Supabase!');
+      } else if (error) {
+        console.log('Cloud sync state not found or cannot fetch from Supabase (normal on first boot):', error.message);
+      }
+    } catch (e: any) {
+      console.error('Failed to restore cloud sync state from Supabase:', e.message);
+    }
+  }
+
+  // Initialize DB file
+  async function initCloudDb() {
+    try {
+      if (supabaseClient) {
+        await loadCloudDbFromSupabase();
+      }
       if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });
       }
@@ -276,7 +311,8 @@ async function startServer() {
           attendance: [],
           payroll: [],
           debts: [],
-          ledger: []
+          ledger: [],
+          guestRequests: []
         };
         fs.writeFileSync(DB_FILE, JSON.stringify(freshDb, null, 2), 'utf8');
         console.log('Central sync cloud database created at:', DB_FILE);
@@ -292,7 +328,9 @@ async function startServer() {
     try {
       if (fs.existsSync(DB_FILE)) {
         const content = fs.readFileSync(DB_FILE, 'utf8');
-        return JSON.parse(content);
+        const db = JSON.parse(content);
+        if (!db.guestRequests) db.guestRequests = [];
+        return db;
       }
     } catch (err) {
       console.error('Error reading cloud DB, returning empty structure:', err);
@@ -309,13 +347,28 @@ async function startServer() {
       attendance: [],
       payroll: [],
       debts: [],
-      ledger: []
+      ledger: [],
+      guestRequests: []
     };
   }
 
   function saveCloudDb(data: any) {
     try {
+      if (!data.guestRequests) data.guestRequests = [];
       fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
+      
+      if (supabaseClient) {
+        supabaseClient
+          .from('cloud_sync_state')
+          .upsert({ id: 'central_db', data: data, updated_at: new Date().toISOString() })
+          .then(({ error }) => {
+            if (error) {
+              console.error('Failed to auto-upsert cloud sync state to Supabase:', error.message);
+            } else {
+              console.log('Successfully backed up cloud sync state to Supabase!');
+            }
+          });
+      }
     } catch (err) {
       console.error('CRITICAL: Failed to write to cloud database:', err);
     }
