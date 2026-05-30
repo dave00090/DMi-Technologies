@@ -1,10 +1,10 @@
 -- =========================================================================
 --                     SUPABASE / POSTGRES DATABASE SCHEMA
---            Designed for SimbaPOS / Uzalynx Retail Hybrid Sync
+--            Designed for DMi POS Retail Hybrid Sync
 -- =========================================================================
 -- This script configures the exact database tables, structural constraints,
 -- composite JSONB types, indexes, row-level security policies (RLS),
--- and auto-inventory triggers for SimbaPOS / Uzalynx.
+-- and auto-inventory triggers for DMi POS.
 --
 -- Instructions:
 -- 1. Log in to your Supabase Console (https://supabase.com).
@@ -38,7 +38,7 @@ begin
     
     truncate temp_fkeys;
 
-    -- 2. Find any foreign keys pointing to or from SimbaPOS / Uzalynx tables in the public schema
+    -- 2. Find any foreign keys pointing to or from DMi POS tables in the public schema
     insert into temp_fkeys
     select distinct
         tc.constraint_name,
@@ -112,7 +112,13 @@ begin
             array['debts', 'sale_id'],
             array['ledger', 'id'],
             array['ledger', 'business_id'],
-            array['ledger', 'shop_id']
+            array['ledger', 'shop_id'],
+            array['guest_requests', 'id'],
+            array['guest_requests', 'business_id'],
+            array['guest_requests', 'shop_id'],
+            array['sale_items', 'id'],
+            array['sale_items', 'sale_id'],
+            array['sale_items', 'product_id']
         ];
     begin
         for i in 1 .. array_upper(tables_cols, 1) loop
@@ -386,6 +392,45 @@ create table if not exists public.ledger (
     last_updated timestamp with time zone default timezone('utc'::text, now())
 );
 
+-- ==========================================
+-- 13. GUEST SUPPORT REQUESTS TABLE
+-- ==========================================
+create table if not exists public.guest_requests (
+    id text primary key,
+    business_id text references public.businesses(id) on delete cascade,
+    shop_id text references public.shops(id) on delete cascade,
+    room_no text not null,
+    guest_name text not null,
+    type text not null, -- REPAIR, FEEDBACK, SERVICE, HOUSEKEEPING
+    title text not null,
+    description text,
+    rating integer, -- 1 to 5 stars if feedback
+    priority text default 'MEDIUM', -- LOW, MEDIUM, HIGH
+    status text default 'PENDING', -- PENDING, IN_PROGRESS, COMPLETED, RESOLVED
+    last_updated timestamp with time zone default timezone('utc'::text, now()),
+    created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- ==========================================
+-- 14. SALE LINE ITEMS TABLE
+-- ==========================================
+create table if not exists public.sale_items (
+    id text primary key,
+    sale_id text references public.sales(id) on delete cascade,
+    product_id text references public.products(id) on delete cascade,
+    variant_id text,
+    name text not null,
+    category text,
+    variant_name text,
+    quantity integer not null,
+    price numeric(12,2) not null,
+    original_price numeric(12,2) not null,
+    buying_price numeric(12,2),
+    unit text,
+    last_updated timestamp with time zone default timezone('utc'::text, now()),
+    created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
 -- =========================================================================
 --             UPGRADE PRE-EXISTING TABLES WITH SYNC & ID COLUMNS
 -- =========================================================================
@@ -454,6 +499,17 @@ alter table public.debts add column if not exists sale_id text;
 alter table public.ledger add column if not exists last_updated timestamp with time zone default timezone('utc'::text, now());
 alter table public.ledger add column if not exists business_id text;
 alter table public.ledger add column if not exists shop_id text;
+
+-- Guest requests & Sale items patch
+alter table public.guest_requests add column if not exists last_updated timestamp with time zone default timezone('utc'::text, now());
+alter table public.guest_requests add column if not exists created_at timestamp with time zone default timezone('utc'::text, now());
+alter table public.guest_requests add column if not exists business_id text;
+alter table public.guest_requests add column if not exists shop_id text;
+
+alter table public.sale_items add column if not exists last_updated timestamp with time zone default timezone('utc'::text, now());
+alter table public.sale_items add column if not exists created_at timestamp with time zone default timezone('utc'::text, now());
+alter table public.sale_items add column if not exists sale_id text;
+alter table public.sale_items add column if not exists product_id text;
 
 
 -- =========================================================================
@@ -524,6 +580,18 @@ alter table public.ledger add constraint ledger_business_id_fkey foreign key (bu
 alter table public.ledger drop constraint if exists ledger_shop_id_fkey;
 alter table public.ledger add constraint ledger_shop_id_fkey foreign key (shop_id) references public.shops(id) on delete cascade;
 
+-- Guest requests Constraints
+alter table public.guest_requests drop constraint if exists guest_requests_business_id_fkey;
+alter table public.guest_requests add constraint guest_requests_business_id_fkey foreign key (business_id) references public.businesses(id) on delete cascade;
+alter table public.guest_requests drop constraint if exists guest_requests_shop_id_fkey;
+alter table public.guest_requests add constraint guest_requests_shop_id_fkey foreign key (shop_id) references public.shops(id) on delete cascade;
+
+-- Sale Items Constraints
+alter table public.sale_items drop constraint if exists sale_items_sale_id_fkey;
+alter table public.sale_items add constraint sale_items_sale_id_fkey foreign key (sale_id) references public.sales(id) on delete cascade;
+alter table public.sale_items drop constraint if exists sale_items_product_id_fkey;
+alter table public.sale_items add constraint sale_items_product_id_fkey foreign key (product_id) references public.products(id) on delete cascade;
+
 -- =========================================================================
 --                     INDEXING FOR SYNCHRONIZATION SPEED
 -- =========================================================================
@@ -567,6 +635,13 @@ create index if not exists idx_debts_last_updated on public.debts(last_updated);
 create index if not exists idx_ledger_business_shop on public.ledger(business_id, shop_id);
 create index if not exists idx_ledger_entity on public.ledger(entity_id);
 create index if not exists idx_ledger_last_updated on public.ledger(last_updated);
+
+-- Guest Requests & Sale Items Indexes
+create index if not exists idx_guest_requests_business_shop on public.guest_requests(business_id, shop_id);
+create index if not exists idx_guest_requests_last_updated on public.guest_requests(last_updated);
+create index if not exists idx_sale_items_sale on public.sale_items(sale_id);
+create index if not exists idx_sale_items_product on public.sale_items(product_id);
+create index if not exists idx_sale_items_last_updated on public.sale_items(last_updated);
 
 
 -- =========================================================================
@@ -655,7 +730,7 @@ $$ language plpgsql;
 do $$
 declare
     tbl text;
-    tables_list text[] := array['businesses', 'shops', 'products', 'customers', 'suppliers', 'expenses', 'employees', 'attendance', 'payroll', 'debts', 'ledger'];
+    tables_list text[] := array['businesses', 'shops', 'products', 'customers', 'suppliers', 'expenses', 'employees', 'attendance', 'payroll', 'debts', 'ledger', 'guest_requests', 'sale_items'];
 begin
     foreach tbl in array tables_list loop
         execute format('
@@ -691,43 +766,65 @@ alter table public.attendance enable row level security;
 alter table public.payroll enable row level security;
 alter table public.debts enable row level security;
 alter table public.ledger enable row level security;
+alter table public.guest_requests enable row level security;
+alter table public.sale_items enable row level security;
 
 -- Basic policy: Allow authenticated queries (You can modify these to capture standard corporate sub-user business metadata)
+drop policy if exists "Allow all actions for authenticated users" on public.businesses;
 create policy "Allow all actions for authenticated users" 
 on public.businesses for all to authenticated using (true) with check (true);
 
+drop policy if exists "Allow all actions for authenticated users" on public.shops;
 create policy "Allow all actions for authenticated users" 
 on public.shops for all to authenticated using (true) with check (true);
 
+drop policy if exists "Allow all actions for authenticated users" on public.products;
 create policy "Allow all actions for authenticated users" 
 on public.products for all to authenticated using (true) with check (true);
 
+drop policy if exists "Allow all actions for authenticated users" on public.sales;
 create policy "Allow all actions for authenticated users" 
 on public.sales for all to authenticated using (true) with check (true);
 
+drop policy if exists "Allow all actions for authenticated users" on public.customers;
 create policy "Allow all actions for authenticated users" 
 on public.customers for all to authenticated using (true) with check (true);
 
+drop policy if exists "Allow all actions for authenticated users" on public.suppliers;
 create policy "Allow all actions for authenticated users" 
 on public.suppliers for all to authenticated using (true) with check (true);
 
+drop policy if exists "Allow all actions for authenticated users" on public.expenses;
 create policy "Allow all actions for authenticated users" 
 on public.expenses for all to authenticated using (true) with check (true);
 
+drop policy if exists "Allow all actions for authenticated users" on public.employees;
 create policy "Allow all actions for authenticated users" 
 on public.employees for all to authenticated using (true) with check (true);
 
+drop policy if exists "Allow all actions for authenticated users" on public.attendance;
 create policy "Allow all actions for authenticated users" 
 on public.attendance for all to authenticated using (true) with check (true);
 
+drop policy if exists "Allow all actions for authenticated users" on public.payroll;
 create policy "Allow all actions for authenticated users" 
 on public.payroll for all to authenticated using (true) with check (true);
 
+drop policy if exists "Allow all actions for authenticated users" on public.debts;
 create policy "Allow all actions for authenticated users" 
 on public.debts for all to authenticated using (true) with check (true);
 
+drop policy if exists "Allow all actions for authenticated users" on public.ledger;
 create policy "Allow all actions for authenticated users" 
 on public.ledger for all to authenticated using (true) with check (true);
+
+drop policy if exists "Allow all actions for authenticated users" on public.guest_requests;
+create policy "Allow all actions for authenticated users" 
+on public.guest_requests for all to authenticated using (true) with check (true);
+
+drop policy if exists "Allow all actions for authenticated users" on public.sale_items;
+create policy "Allow all actions for authenticated users" 
+on public.sale_items for all to authenticated using (true) with check (true);
 
 
 -- =========================================================================
@@ -747,5 +844,7 @@ begin;
     public.products, 
     public.sales,
     public.debts,
-    public.customers;
+    public.customers,
+    public.guest_requests,
+    public.sale_items;
 commit;
