@@ -617,50 +617,148 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
   return (
     <div className="space-y-8">
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 print:hidden">
-        <div className="bg-card p-6 rounded-3xl border border-border shadow-sm">
-          <div className="flex items-center gap-4 mb-2">
-            <div className="p-3 bg-indigo-500/10 rounded-2xl text-indigo-600">
-              <Package className="w-6 h-6" />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 print:hidden border-b border-border/50 pb-6">
+        {businessProfile?.type === 'HOTEL' ? (
+          <>
+            <div className="bg-card p-6 rounded-3xl border border-border shadow-sm hover:ring-1 hover:ring-indigo-500/30 transition-all">
+              <div className="flex items-center gap-4 mb-2">
+                <div className="p-3 bg-indigo-500/10 rounded-2xl text-indigo-600">
+                  <Package className="w-6 h-6" />
+                </div>
+                <span className="text-xs font-bold text-muted uppercase tracking-wider">Lodging Units & Rooms</span>
+              </div>
+              <p className="text-3xl font-extrabold text-ink">{products.length.toLocaleString()} <span className="text-xs font-normal text-muted">active</span></p>
             </div>
-            <span className="text-sm font-bold text-muted uppercase">Total Items</span>
-          </div>
-          <p className="text-3xl font-bold text-ink">{totalItems.toLocaleString()}</p>
-        </div>
-        
-        <div className="bg-card p-6 rounded-3xl border border-border shadow-sm">
-          <div className="flex items-center gap-4 mb-2">
-            <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-600">
-              <DollarSign className="w-6 h-6" />
+            
+            <div className="bg-card p-6 rounded-3xl border border-border shadow-sm hover:ring-1 hover:ring-emerald-500/30 transition-all">
+              <div className="flex items-center gap-4 mb-2">
+                <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-600">
+                  <DollarSign className="w-6 h-6" />
+                </div>
+                <span className="text-xs font-bold text-muted uppercase tracking-wider">Est Booking Value</span>
+              </div>
+              <p className="text-3xl font-extrabold text-ink">
+                {businessProfile?.currency || 'KSh'}{totalValue.toLocaleString()}
+              </p>
             </div>
-            <span className="text-sm font-bold text-muted uppercase">Stock Value</span>
-          </div>
-          <p className="text-3xl font-bold text-ink">
-            {businessProfile?.currency || 'KSh'}{totalValue.toLocaleString()}
-          </p>
-        </div>
 
-        <div className="bg-card p-6 rounded-3xl border border-border shadow-sm">
-          <div className="flex items-center gap-4 mb-2">
-            <div className="p-3 bg-amber-500/10 rounded-2xl text-amber-600">
-              <TrendingUp className="w-6 h-6" />
+            <div className="bg-card p-6 rounded-3xl border border-border shadow-sm hover:ring-1 hover:ring-amber-500/30 transition-all">
+              <div className="flex items-center gap-4 mb-2">
+                <div className="p-3 bg-amber-500/10 rounded-2xl text-amber-600">
+                  <TrendingUp className="w-6 h-6" />
+                </div>
+                <span className="text-xs font-bold text-muted uppercase tracking-wider">Estimated Profit margin</span>
+              </div>
+              <p className="text-3xl font-extrabold text-ink">
+                {businessProfile?.currency || 'KSh'}{(totalValue - buyingValue).toLocaleString()}
+              </p>
             </div>
-            <span className="text-sm font-bold text-muted uppercase">Potential Profit</span>
-          </div>
-          <p className="text-3xl font-bold text-ink">
-            {businessProfile?.currency || 'KSh'}{(totalValue - buyingValue).toLocaleString()}
-          </p>
-        </div>
 
-        <div className="bg-card p-6 rounded-3xl border border-border shadow-sm">
-          <div className="flex items-center gap-4 mb-2">
-            <div className="p-3 bg-rose-500/10 rounded-2xl text-rose-600">
-              <AlertCircle className="w-6 h-6" />
+            <div className="bg-card p-6 rounded-3xl border border-border shadow-sm hover:ring-1 hover:ring-rose-500/30 transition-all">
+              <div className="flex items-center gap-4 mb-2">
+                <div className="p-3 bg-rose-500/10 rounded-2xl text-rose-600">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <span className="text-xs font-bold text-muted uppercase tracking-wider">Available bookings</span>
+              </div>
+              <p className="text-3xl font-extrabold text-ink">
+                {products.filter(p => p.variants?.some(v => v.stock > 0)).length} <span className="text-xs font-normal text-muted">units ready</span>
+              </p>
             </div>
-            <span className="text-sm font-bold text-muted uppercase">Low Stock</span>
-          </div>
-          <p className="text-3xl font-bold text-ink">{lowStockCount}</p>
-        </div>
+          </>
+        ) : (businessProfile?.type === 'RESTAURANT' || businessProfile?.type === 'FAST_FOOD' || businessProfile?.type === 'BAR_RESTAURANT') ? (
+          <>
+            <div className="bg-card p-6 rounded-3xl border border-border shadow-sm hover:ring-1 hover:ring-indigo-500/30 transition-all">
+              <div className="flex items-center gap-4 mb-2">
+                <div className="p-3 bg-indigo-500/10 rounded-2xl text-indigo-600">
+                  <Package className="w-6 h-6" />
+                </div>
+                <span className="text-xs font-bold text-muted uppercase tracking-wider">Menu Dishes Count</span>
+              </div>
+              <p className="text-3xl font-extrabold text-ink">{products.length.toLocaleString()}</p>
+            </div>
+            
+            <div className="bg-card p-6 rounded-3xl border border-border shadow-sm hover:ring-1 hover:ring-emerald-500/30 transition-all">
+              <div className="flex items-center gap-4 mb-2">
+                <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-600">
+                  <DollarSign className="w-6 h-6" />
+                </div>
+                <span className="text-xs font-bold text-muted uppercase tracking-wider">Menu Market Value</span>
+              </div>
+              <p className="text-3xl font-extrabold text-ink">
+                {businessProfile?.currency || 'KSh'}{totalValue.toLocaleString()}
+              </p>
+            </div>
+
+            <div className="bg-card p-6 rounded-3xl border border-border shadow-sm hover:ring-1 hover:ring-amber-500/30 transition-all">
+              <div className="flex items-center gap-4 mb-2">
+                <div className="p-3 bg-amber-500/10 rounded-2xl text-amber-600">
+                  <TrendingUp className="w-6 h-6" />
+                </div>
+                <span className="text-xs font-bold text-muted uppercase tracking-wider">Est Food-Cost Profit</span>
+              </div>
+              <p className="text-3xl font-extrabold text-ink">
+                {businessProfile?.currency || 'KSh'}{(totalValue - buyingValue).toLocaleString()}
+              </p>
+            </div>
+
+            <div className="bg-card p-6 rounded-3xl border border-border shadow-sm hover:ring-1 hover:ring-rose-500/30 transition-all">
+              <div className="flex items-center gap-4 mb-2">
+                <div className="p-3 bg-rose-500/10 rounded-2xl text-rose-600">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <span className="text-xs font-bold text-muted uppercase tracking-wider">Dishes Low Ingredients</span>
+              </div>
+              <p className="text-3xl font-extrabold text-ink">{lowStockCount}</p>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="bg-card p-6 rounded-3xl border border-border shadow-sm">
+              <div className="flex items-center gap-4 mb-2">
+                <div className="p-3 bg-indigo-500/10 rounded-2xl text-indigo-600">
+                  <Package className="w-6 h-6" />
+                </div>
+                <span className="text-sm font-bold text-muted uppercase">Total Items</span>
+              </div>
+              <p className="text-3xl font-bold text-ink">{totalItems.toLocaleString()}</p>
+            </div>
+            
+            <div className="bg-card p-6 rounded-3xl border border-border shadow-sm">
+              <div className="flex items-center gap-4 mb-2">
+                <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-600">
+                  <DollarSign className="w-6 h-6" />
+                </div>
+                <span className="text-sm font-bold text-muted uppercase">Stock Value</span>
+              </div>
+              <p className="text-3xl font-bold text-ink">
+                {businessProfile?.currency || 'KSh'}{totalValue.toLocaleString()}
+              </p>
+            </div>
+
+            <div className="bg-card p-6 rounded-3xl border border-border shadow-sm">
+              <div className="flex items-center gap-4 mb-2">
+                <div className="p-3 bg-amber-500/10 rounded-2xl text-amber-600">
+                  <TrendingUp className="w-6 h-6" />
+                </div>
+                <span className="text-sm font-bold text-muted uppercase">Potential Profit</span>
+              </div>
+              <p className="text-3xl font-bold text-ink">
+                {businessProfile?.currency || 'KSh'}{(totalValue - buyingValue).toLocaleString()}
+              </p>
+            </div>
+
+            <div className="bg-card p-6 rounded-3xl border border-border shadow-sm">
+              <div className="flex items-center gap-4 mb-2">
+                <div className="p-3 bg-rose-500/10 rounded-2xl text-rose-600">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <span className="text-sm font-bold text-muted uppercase">Low Stock</span>
+              </div>
+              <p className="text-3xl font-bold text-ink">{lowStockCount}</p>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Header Section */}

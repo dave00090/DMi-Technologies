@@ -28,6 +28,7 @@ const STORAGE_KEYS = {
   LEDGER: 'dmi_pos_ledger',
   BUSINESSES: 'dmi_pos_businesses',
   SHOPS: 'dmi_pos_shops',
+  GUEST_REQUESTS: 'dmi_pos_guest_requests',
 };
 
 class SyncService {
@@ -40,37 +41,100 @@ class SyncService {
 
   public getBaseUrl(): string {
     const saved = localStorage.getItem('dmi_pos_sync_server_url');
-    if (saved) return saved;
+    let url = '';
     
-    // Auto fallback for packaged Electron apps loaded on file:// protocol
+    if (saved) {
+      url = saved;
+    } else if (window.location.protocol === 'file:') {
+      url = 'https://ais-pre-kayb6z7vprmlkln2iwpxb5-430844239449.europe-west2.run.app';
+    } else {
+      url = window.location.origin;
+    }
+
+    // Auto-heal previously corrupted URL formats stored in LocalStorage
+    if (url.includes('http://https') || url.includes('http://http') || url.includes('/https') || url.includes('//:')) {
+      let clean = url.trim();
+      const isSecure = /https/i.test(clean.substring(0, 25));
+      
+      // Remove bad leading headers recursively
+      for (let i = 0; i < 4; i++) {
+        clean = clean.replace(/^(https?|http|ftp|file)[\s:/\\+]+/i, '');
+      }
+      clean = clean.replace(/^[:/\\ ]+/, '').replace(/[:/\\ ]+$/, '');
+      
+      url = (isSecure ? 'https://' : 'http://') + clean;
+      if (saved) {
+        localStorage.setItem('dmi_pos_sync_server_url', url);
+      }
+    }
+
+    // If the resolved URL is the same origin as the current page, return empty string so axios makes relative requests.
+    // This allows browser cookies, auth headers, and same-origin policies to pass seamlessly without triggering 403 Forbidden on sandboxed gateways.
+    if (window.location.protocol !== 'file:') {
+      try {
+        const originUrl = new URL(url);
+        // Compare hosts
+        if (originUrl.host === window.location.host) {
+          return '';
+        }
+      } catch (e) {
+        // Fallback for relative paths or invalid URL formats
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+          return '';
+        }
+      }
+    }
+    
+    return url;
+  }
+
+  public getDisplayUrl(): string {
+    const saved = localStorage.getItem('dmi_pos_sync_server_url');
+    if (saved) return saved;
     if (window.location.protocol === 'file:') {
       return 'https://ais-pre-kayb6z7vprmlkln2iwpxb5-430844239449.europe-west2.run.app';
     }
-    
-    // Normal browser or local dev fallback
     return window.location.origin;
   }
 
   public setBaseUrl(url: string) {
-    let sanitized = url.trim();
-    if (sanitized && !sanitized.startsWith('http://') && !sanitized.startsWith('https://')) {
-      sanitized = 'http://' + sanitized;
-    }
-    sanitized = sanitized.replace(/\/+$/, ''); // Remove trailing slashes
-    
-    if (sanitized) {
-      localStorage.setItem('dmi_pos_sync_server_url', sanitized);
-    } else {
+    let clean = url.trim();
+    if (!clean) {
       localStorage.removeItem('dmi_pos_sync_server_url');
+      // Clear legacy error logs when resetting so the interface is perfectly clean
+      this.syncLogs = this.syncLogs.filter(log => log.type !== 'ERROR');
+      this.addLog('INFO', `Sync backend server gateway reset to default: ${this.getDisplayUrl()}`);
+      this.checkConnectivity();
+      return;
     }
-    this.addLog('INFO', `Sync backend server gateway set to: ${sanitized || this.getBaseUrl()}`);
+
+    // Detect if they explicitly wanted https (contains 'https' in the starting part)
+    const isSecure = /https/i.test(clean.substring(0, 20));
+
+    // Clean up nested protocols, mistyped slashes and colons (e.g., "http://https//:dmipos.netlify.app")
+    // Replace leading scheme/protocols recursively
+    let hostPart = clean;
+    for (let i = 0; i < 3; i++) {
+      hostPart = hostPart.replace(/^(https?|http|ftp|file)[\s:/\\+]+/i, '');
+    }
+    // Remove any remaining leading/trailing colons, slashes, or whitespace
+    hostPart = hostPart.replace(/^[:/\\ ]+/, '').replace(/[:/\\ ]+$/, '');
+
+    // Reconstruct valid URL
+    const sanitized = (isSecure ? 'https://' : 'http://') + hostPart;
+    
+    // Clear legacy error logs when switching URLs
+    this.syncLogs = this.syncLogs.filter(log => log.type !== 'ERROR');
+    localStorage.setItem('dmi_pos_sync_server_url', sanitized);
+    this.addLog('INFO', `Sync backend server gateway set to: ${sanitized}`);
     this.checkConnectivity();
   }
 
   private getApiClient() {
     return axios.create({
       baseURL: this.getBaseUrl(),
-      timeout: 10000
+      timeout: 5000,
+      withCredentials: true
     });
   }
 
@@ -100,7 +164,7 @@ class SyncService {
       this.syncLogs = cachedStats.logs;
     }
 
-    // Start background syncing loop (every 30 seconds)
+    // Start background syncing loop (every 30 seconds is standard and prevents infinite loop congestions)
     this.startAutoSync(30000);
   }
 
@@ -149,6 +213,7 @@ class SyncService {
   }
 
   public async checkConnectivity(): Promise<boolean> {
+    // If browser/device states indicate offline, respect it immediately to bypass unnecessary network timeouts
     if (!navigator.onLine) {
       this.updateOnlineStatus(false);
       this.lastConnectionError = 'Device feels offline (navigator.onLine is false)';
@@ -170,7 +235,7 @@ class SyncService {
       this.lastConnectionError = e.response
         ? `HTTP ${e.response.status}: ${e.response.statusText || 'Error response'}`
         : e.message || 'API Timeout / Connection Refused';
-      console.warn('Connectivity healthcheck failed for URL:', this.getBaseUrl(), this.lastConnectionError);
+      console.warn('Connectivity healthcheck failed for URL:', this.getDisplayUrl(), this.lastConnectionError);
       return false;
     }
   }
@@ -192,21 +257,38 @@ class SyncService {
       clearInterval(this.intervalId);
     }
     this.intervalId = setInterval(async () => {
+      const wasOnline = this.isOnlineState;
       const online = await this.checkConnectivity();
+      
+      // If we just transitioned/recovered from offline to online, immediately trigger a full database synchronization!
+      if (online && !wasOnline && !this.isSyncing) {
+        this.addLog('INFO', 'Active internet connection recovered! Auto-syncing database immediately...');
+        this.syncNow(false);
+        return;
+      }
+
+      // Standard periodic background sync if we have pending records to push
       if (online && this.getPendingCount() > 0 && !this.isSyncing) {
         this.addLog('INFO', 'Background auto-sync triggered...');
-        this.syncNow();
+        this.syncNow(false);
       }
     }, intervalMs);
   }
 
-  public async syncNow(): Promise<boolean> {
+  public async syncNow(isManual: boolean = false): Promise<boolean> {
     if (this.isSyncing) return false;
     
     const online = await this.checkConnectivity();
     if (!online) {
       const reason = this.lastConnectionError ? ` - ${this.lastConnectionError}` : '';
-      this.addLog('ERROR', `Sync failed: Server URL (${this.getBaseUrl()}) is unreachable${reason}. check connection or configure server url.`);
+      const hasCustomUrl = !!localStorage.getItem('dmi_pos_sync_server_url');
+      
+      // Only log sync failures as screaming errors under manual user clicks OR when a custom URL is explicitly set.
+      if (isManual || hasCustomUrl) {
+        this.addLog('ERROR', `Sync failed: Server URL (${this.getDisplayUrl()}) is unreachable${reason}. Check connection or configure server url.`);
+      } else {
+        console.log('Background sync bypassed: Local terminal is operating offline.');
+      }
       return false;
     }
 
@@ -235,6 +317,7 @@ class SyncService {
         { key: STORAGE_KEYS.PAYROLL, name: 'payroll' },
         { key: STORAGE_KEYS.DEBTS, name: 'debts' },
         { key: STORAGE_KEYS.LEDGER, name: 'ledger' },
+        { key: STORAGE_KEYS.GUEST_REQUESTS, name: 'guestRequests' },
       ];
 
       // 1. GATHER ALL LOCAL UNSYNCED REC_ARDS
@@ -257,6 +340,11 @@ class SyncService {
           changes: pushChanges
         });
         
+        // Check if response is HTML (which happens on static servers like Netlify)
+        if (typeof pushRes.data === 'string' && (pushRes.data.includes('<!DOCTYPE html') || pushRes.data.includes('<html'))) {
+          throw new Error('Sync gateway URL points to a static frontend site (like Netlify) instead of a live API server backend. Reset default or specify a real Node API URL.');
+        }
+
         if (pushRes.data?.status === 'SUCCESS') {
           syncedIdsMap = pushRes.data.syncedIds || {};
           this.addLog('SUCCESS', 'Successfully pushed local transactions to cloud.');
@@ -289,6 +377,11 @@ class SyncService {
       const pullRes = await this.getApiClient().get('/api/sync/pull', {
         params: { businessId, shopId, since }
       });
+
+      // Check if response is HTML (which happens on static servers like Netlify)
+      if (typeof pullRes.data === 'string' && (pullRes.data.includes('<!DOCTYPE html') || pullRes.data.includes('<html'))) {
+        throw new Error('Sync gateway URL points to a static frontend site (like Netlify) instead of a live API server backend. Reset default or specify a real Node API URL.');
+      }
 
       const serverData = pullRes.data?.data || {};
       const newSyncTimestamp = pullRes.data?.timestamp || new Date().toISOString();

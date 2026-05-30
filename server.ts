@@ -194,6 +194,65 @@ async function startServer() {
     });
   });
 
+  // --- Real-time Guest Requests API (Supports Cross-Device Syncing) ---
+  app.get('/api/guest-requests', (req, res) => {
+    const { businessId, shopId } = req.query;
+    if (!businessId || !shopId) {
+      return res.status(400).json({ error: 'Missing businessId or shopId' });
+    }
+    const db = getCloudDb();
+    const requests = db.guestRequests || [];
+    const filtered = requests.filter((r: any) => r.businessId === businessId && r.shopId === shopId);
+    res.json(filtered);
+  });
+
+  app.post('/api/guest-requests', (req, res) => {
+    const reqBody = req.body;
+    if (!reqBody.businessId || !reqBody.shopId || !reqBody.title) {
+      return res.status(400).json({ error: 'Missing required request attributes' });
+    }
+    const db = getCloudDb();
+    if (!db.guestRequests) db.guestRequests = [];
+    
+    const newRequest = {
+      ...reqBody,
+      id: reqBody.id || `gr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      lastUpdated: reqBody.lastUpdated || new Date().toISOString()
+    };
+    db.guestRequests.push(newRequest);
+    saveCloudDb(db);
+    res.status(201).json(newRequest);
+  });
+
+  app.put('/api/guest-requests/:id/status', (req, res) => {
+    const { id } = req.params;
+    const { status, lastUpdated } = req.body;
+    if (!status) {
+      return res.status(400).json({ error: 'Missing status' });
+    }
+    const db = getCloudDb();
+    if (!db.guestRequests) db.guestRequests = [];
+    
+    const index = db.guestRequests.findIndex((r: any) => r.id === id);
+    if (index > -1) {
+      db.guestRequests[index].status = status;
+      db.guestRequests[index].lastUpdated = lastUpdated || new Date().toISOString();
+      saveCloudDb(db);
+      return res.json(db.guestRequests[index]);
+    }
+    res.status(404).json({ error: 'Request not found' });
+  });
+
+  app.delete('/api/guest-requests/:id', (req, res) => {
+    const { id } = req.params;
+    const db = getCloudDb();
+    if (!db.guestRequests) db.guestRequests = [];
+    
+    db.guestRequests = db.guestRequests.filter((r: any) => r.id !== id);
+    saveCloudDb(db);
+    res.json({ success: true });
+  });
+
   // --- Hybrid Cloud Sync Database Configuration ---
   const DATA_DIR = path.resolve(__dirname, 'data');
   const DB_FILE = path.join(DATA_DIR, 'cloud_db.json');
@@ -300,6 +359,7 @@ async function startServer() {
     result.payroll = filterFn(db.payroll, false);
     result.debts = filterFn(db.debts, true);
     result.ledger = filterFn(db.ledger, true);
+    result.guestRequests = filterFn(db.guestRequests || [], true);
 
     res.json({
       timestamp: new Date().toISOString(),
@@ -324,7 +384,7 @@ async function startServer() {
     const tableKeys = [
       'businesses', 'shops', 'products', 'sales', 'customers',
       'expenses', 'suppliers', 'employees', 'attendance', 'payroll',
-      'debts', 'ledger'
+      'debts', 'ledger', 'guestRequests'
     ];
 
     for (const table of tableKeys) {

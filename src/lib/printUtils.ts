@@ -71,6 +71,17 @@ export const printElement = (elementId: string, isReceipt = true): boolean => {
         print-color-adjust: exact !important;
       }
       
+      /* Ensure everything inside the print iframe is visible by default to override global parent document overrides */
+      body, body * {
+        visibility: visible !important;
+      }
+
+      /* Explicitly hide non-printable UI elements */
+      .print\\:hidden, aside, header, nav, button, .no-print, [role="button"], .no-print *, .print\\:hidden * {
+        display: none !important;
+        visibility: hidden !important;
+      }
+      
       /* Receipt Mode: enforce structured receipt centering and limits */
       ${isReceipt ? `
       #print-receipt, .receipt-font, .receipt-font * {
@@ -93,15 +104,12 @@ export const printElement = (elementId: string, isReceipt = true): boolean => {
       * {
         visibility: visible !important;
       }
-      .print\\:hidden, aside, header, nav, button, .no-print, [role="button"] {
-        display: none !important;
-        visibility: hidden !important;
-      }
       `}
     </style>
   `);
 
-  iframeDoc.write('</head><body>');
+  // Write corresponding printing classes to the iframe body
+  iframeDoc.write(`</head><body class="${isReceipt ? 'printing-receipt' : 'printing-report'}">`);
   
   // 3. Render the target layout wrapper and outerHTML
   iframeDoc.write(`<div class="${isReceipt ? '' : 'w-full'}" style="width: 100%; box-sizing: border-box;">${element.outerHTML}</div>`);

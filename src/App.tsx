@@ -32,6 +32,10 @@ import { MasterLogin } from './components/MasterLogin';
 import { PenaltyScreen } from './components/PenaltyScreen';
 import { masterService, supabase } from './services/masterService';
 
+import { InvoicesTab } from './components/InvoicesTab';
+import { GuestDesk } from './components/GuestDesk';
+import { GuestPortal } from './components/GuestPortal';
+
 export default function App() {
   const [isActivated, setIsActivated] = useState(localDb.isActivated());
   const [isSystemLocked, setIsSystemLocked] = useState(false);
@@ -282,6 +286,10 @@ export default function App() {
         return user.role === 'admin' ? <Dashboard user={user} businessId={activeBusinessId} shopId={activeShopId} /> : <POS user={user} businessId={activeBusinessId} shopId={activeShopId} />;
       case 'inventory':
         return user.role === 'hr' ? <HRM businessId={activeBusinessId} shopId={activeShopId} user={user} /> : <Inventory user={user} businessId={activeBusinessId} shopId={activeShopId} />;
+      case 'invoices':
+        return <InvoicesTab businessId={activeBusinessId} shopId={activeShopId} businessProfile={activeBusiness!} shopName={activeShop?.name || ''} />;
+      case 'guest-requests':
+        return <GuestDesk businessId={activeBusinessId} shopId={activeShopId} user={user} />;
       case 'customers':
         return user.role === 'hr' ? <HRM businessId={activeBusinessId} shopId={activeShopId} user={user} /> : <Customers user={user} businessId={activeBusinessId} onViewLedger={(id) => handleViewLedger(id, 'CUSTOMER')} />;
       case 'settings':
@@ -304,6 +312,16 @@ export default function App() {
   };
 
   const mainView = () => {
+    // Direct QR scanning guest bypass mode
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('mode') === 'guest') {
+      const guestBizId = urlParams.get('businessId');
+      const guestShId = urlParams.get('shopId');
+      if (guestBizId && guestShId) {
+        return <GuestPortal businessId={guestBizId} shopId={guestShId} />;
+      }
+    }
+
     if (!isActivated) {
       return <ActivationScreen onActivated={() => setIsActivated(true)} onMasterLogin={() => setShowMasterLogin(true)} />;
     }
@@ -339,6 +357,7 @@ export default function App() {
         shopName={activeShop?.name || ''}
         authComponent={<Auth onUserLoaded={setUser} />}
         onExitBusiness={handleExitBusiness}
+        businessType={activeBusiness?.type}
       >
         {renderContent()}
       </Layout>

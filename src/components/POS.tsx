@@ -322,11 +322,23 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
   useHardwareScanner({ onScan: handleBarcodeScan });
 
   useEffect(() => {
+    const handleSyncStats = (e: any) => {
+      if (e.detail && typeof e.detail.isOnline === 'boolean') {
+        setIsOnline(e.detail.isOnline);
+      }
+    };
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
+    
+    window.addEventListener('sync-stats-updated', handleSyncStats);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    
+    // Initialize state from existing service stats
+    setIsOnline(syncService.getStats().isOnline);
+    
     return () => {
+      window.removeEventListener('sync-stats-updated', handleSyncStats);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };

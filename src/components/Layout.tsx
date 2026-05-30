@@ -18,7 +18,13 @@ import {
   UserCheck,
   History,
   Cloud,
-  CloudOff
+  CloudOff,
+  FileText,
+  HeartHandshake,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  Laptop
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
@@ -39,6 +45,7 @@ interface LayoutProps {
   shopName: string;
   authComponent: React.ReactNode;
   onExitBusiness: () => void;
+  businessType?: string;
 }
 
 export const Layout: React.FC<LayoutProps> = ({ 
@@ -51,12 +58,14 @@ export const Layout: React.FC<LayoutProps> = ({
   businessLogo,
   shopName,
   authComponent,
-  onExitBusiness
+  onExitBusiness,
+  businessType
 }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(window.innerWidth > 1024);
   const [currentTime, setCurrentTime] = React.useState(new Date());
   const [isSyncOpen, setIsSyncOpen] = React.useState(false);
   const [syncStats, setSyncStats] = React.useState({ isOnline: navigator.onLine, pendingCount: 0 });
+  const [isSyncing, setIsSyncing] = React.useState(false);
 
   React.useEffect(() => {
     const unsubscribe = syncService.addListener((stats) => {
@@ -97,6 +106,10 @@ export const Layout: React.FC<LayoutProps> = ({
     { id: 'pos', label: 'Sales POS', icon: ShoppingCart, roles: ['admin', 'staff'] },
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin'] },
     { id: 'inventory', label: 'Inventory', icon: Package, roles: ['admin', 'staff'] },
+    { id: 'invoices', label: 'Invoices', icon: FileText, roles: ['admin', 'staff'] },
+    ...(businessType === 'HOTEL' ? [
+      { id: 'guest-requests', label: 'Guest Desk', icon: HeartHandshake, roles: ['admin', 'staff'] }
+    ] : []),
     { id: 'expenses', label: 'Expenses', icon: Receipt, roles: ['admin'] },
     { id: 'suppliers', label: 'Suppliers', icon: Truck, roles: ['admin'] },
     { id: 'hrm', label: 'HRM', icon: UserCheck, roles: ['admin', 'hr'] },
@@ -252,34 +265,69 @@ export const Layout: React.FC<LayoutProps> = ({
           </div>
           <div className="flex items-center gap-2 sm:gap-4">
             {user && (
-              <button
-                onClick={() => setIsSyncOpen(true)}
-                className={`p-2 sm:p-2.5 rounded-xl border flex items-center gap-2 transition-all hover:scale-[1.02] cursor-pointer ${
-                  syncStats.isOnline
-                    ? 'bg-emerald-500/5 text-emerald-600 border-emerald-500/10 hover:bg-emerald-500/10'
-                    : 'bg-rose-500/5 text-rose-500 border-rose-500/10 hover:bg-rose-500/10'
-                }`}
-                title="Central Cloud Sync Monitor"
-              >
-                {syncStats.isOnline ? (
-                  <Cloud className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-500 animate-pulse" />
-                ) : (
-                  <CloudOff className="w-4 h-4 sm:w-5 sm:h-5 text-rose-500" />
-                )}
-                <div className="hidden md:flex flex-col items-start leading-none text-left">
-                  <span className="text-[9px] font-black uppercase tracking-wider">
-                    {syncStats.isOnline ? 'Online' : 'Offline'}
+              <div className="flex items-center gap-2 sm:gap-3 bg-muted/30 p-1 rounded-2xl border border-border">
+                {/* 1. WIFI SIGN STATUS INDICATOR */}
+                <div 
+                  className={`p-2 rounded-xl flex items-center gap-2 transition-all text-xs font-bold leading-none ${
+                    syncStats.isOnline 
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/10' 
+                      : 'bg-neutral-500/10 text-neutral-400 dark:text-neutral-500 border border-neutral-500/10'
+                  }`}
+                  title={syncStats.isOnline ? "System is Online & Connected to Cloud" : "System is Offline (Transactions are Cached Perfectly)"}
+                >
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                      syncStats.isOnline ? 'bg-emerald-500' : 'bg-neutral-400'
+                    }`}></span>
+                    <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                      syncStats.isOnline ? 'bg-emerald-600' : 'bg-neutral-500'
+                    }`}></span>
                   </span>
-                  <span className="text-[7px] text-muted tracking-wide font-black uppercase">
-                    {syncStats.isOnline ? 'Cloud Synced' : 'Cached Terminal'}
+                  {syncStats.isOnline ? (
+                    <Wifi className="w-4 h-4 text-emerald-500" />
+                  ) : (
+                    <WifiOff className="w-4 h-4 text-neutral-400" />
+                  )}
+                  <span className="hidden sm:inline-block">
+                    {syncStats.isOnline ? "Online" : "Offline"}
                   </span>
                 </div>
-                {syncStats.pendingCount > 0 && (
-                  <span className="bg-rose-500 text-white font-black text-[9px] px-1.5 py-0.5 rounded-lg ml-0.5 animate-bounce">
-                    {syncStats.pendingCount}
+
+                {/* 2. MANUAL INSTANT SYNC BUTTON */}
+                <button
+                  onClick={async () => {
+                    setIsSyncing(true);
+                    await syncService.syncNow(true);
+                    setIsSyncing(false);
+                  }}
+                  disabled={isSyncing}
+                  className={`px-3 py-2 rounded-xl border flex items-center gap-2 h-9 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer ${
+                    isSyncing 
+                      ? 'bg-indigo-50/10 text-indigo-500 border-indigo-200 animate-pulse'
+                      : 'bg-card text-ink border-border hover:bg-muted font-bold text-xs'
+                  }`}
+                  title="Force Instant Database Backup & Sync"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-indigo-500 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <span>
+                    {isSyncing ? 'Syncing...' : 'Sync Now'}
                   </span>
-                )}
-              </button>
+                  {syncStats.pendingCount > 0 && (
+                    <span className="bg-rose-500 text-white font-black text-[9px] px-1.5 py-0.5 rounded-lg flex items-center justify-center min-w-4 h-4 aspect-square animate-bounce">
+                      {syncStats.pendingCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* 3. SYNC MONITOR PANEL TOGGLE */}
+                <button
+                  onClick={() => setIsSyncOpen(true)}
+                  className="px-3 py-2 hover:bg-muted rounded-xl text-xs font-bold text-muted hover:text-ink transition-colors cursor-pointer"
+                  title="Configure Cloud Sync Gateway and view Sync Logs"
+                >
+                  Configure
+                </button>
+              </div>
             )}
             <div className="hidden lg:block text-right mr-4">
               <p className="text-sm font-medium text-muted">

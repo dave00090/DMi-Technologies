@@ -289,3 +289,21 @@ export interface LoginHistory {
   browser?: string;
   status: 'SUCCESS' | 'FAILED';
 }
+
+export interface GuestRequest {
+  id: string;
+  businessId: string;
+  shopId: string;
+  roomNo: string;
+  guestName: string;
+  type: 'REPAIR' | 'FEEDBACK' | 'SERVICE' | 'HOUSEKEEPING';
+  title: string;
+  description: string;
+  rating?: number; // 1-5 for feedback or satisfaction
+  priority: 'LOW' | 'MEDIUM' | 'HIGH';
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'RESOLVED';
+  createdAt: string;
+  synced?: boolean;
+  lastUpdated?: string;
+}
+

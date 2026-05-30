@@ -11,7 +11,9 @@ import {
   WifiOff,
   Clock,
   ChevronRight,
-  Sparkles
+  Sparkles,
+  Info,
+  Laptop
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -45,7 +47,7 @@ export const SyncPanel: React.FC<SyncPanelProps> = ({ isOpen, onClose }) => {
 
   const handleManualSync = async () => {
     setIsSyncing(true);
-    const success = await syncService.syncNow();
+    const success = await syncService.syncNow(true);
     setIsSyncing(false);
   };
 
@@ -179,6 +181,32 @@ export const SyncPanel: React.FC<SyncPanelProps> = ({ isOpen, onClose }) => {
               </p>
             </div>
 
+            {/* Desktop Packager System Wrapper */}
+            <div className="p-4 rounded-xl border border-border bg-card/60 space-y-3">
+              <div className="flex items-center gap-2">
+                <Laptop className="w-5 h-5 text-indigo-500 animate-pulse" />
+                <span className="text-xs font-black uppercase tracking-wider text-ink">Packaged Windows Desktop Client (.exe)</span>
+              </div>
+              <p className="text-xs text-muted leading-relaxed">
+                DMi POS comes with a fully pre-configured Electron wrapper that bundles all retail, hospitality, and employee ledgers into a native desktop utility. 
+                Perfect for offline cashiers and hotel support hubs, it supports printing, full offline local state cache, and features the top-navbar Wi-Fi status indicator.
+              </p>
+              
+              <div className="bg-muted p-3.5 rounded-lg border border-border text-[11px] font-mono leading-relaxed text-ink space-y-2">
+                <div className="text-indigo-600 dark:text-indigo-400 font-bold uppercase text-[9px] tracking-wider">How to package your local .exe client:</div>
+                <div className="space-y-1">
+                  <div>1. Export/download this workspace to your computer.</div>
+                  <div>2. Run <code className="bg-card px-1.5 py-0.5 rounded border border-border text-indigo-500">npm install</code> in your local terminal.</div>
+                  <div>3. Run <code className="bg-card px-1.5 py-0.5 rounded border border-border text-indigo-500">npm run build</code> to compile web resources.</div>
+                  <div>4. Run <code className="bg-card px-1.5 py-0.5 rounded border border-border text-emerald-500 font-bold">npm run electron:build</code> to build installer.</div>
+                </div>
+              </div>
+              <div className="text-[10px] text-indigo-500 font-bold flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Outputs native installer inside <code className="bg-muted px-1.5 py-0.5 rounded text-[10px]/none">/dist_electron/</code></span>
+              </div>
+            </div>
+
             {/* Action Trigger */}
             <button
               onClick={handleManualSync}
@@ -207,10 +235,16 @@ export const SyncPanel: React.FC<SyncPanelProps> = ({ isOpen, onClose }) => {
                 ) : (
                   stats.logs.map((log, index) => (
                     <div key={index} className="p-3 flex items-start gap-3 bg-muted/30">
-                      <div className="mt-0.5">
+                      <div className="mt-0.5 shrink-0">
                         {log.type === 'SUCCESS' && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
                         {log.type === 'ERROR' && <AlertTriangle className="w-4 h-4 text-rose-500" />}
-                        {log.type === 'INFO' && <RefreshCw className="w-4 h-4 text-indigo-500 animate-spin" />}
+                        {log.type === 'INFO' && (
+                          index === 0 && isSyncing ? (
+                            <RefreshCw className="w-4 h-4 text-indigo-500 animate-spin" />
+                          ) : (
+                            <Info className="w-4 h-4 text-indigo-500" />
+                          )
+                        )}
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center justify-between text-[10px] text-muted mb-0.5">

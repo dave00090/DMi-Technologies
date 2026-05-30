@@ -14,7 +14,8 @@ import {
   Debt,
   LedgerEntry,
   Variant,
-  Shop
+  Shop,
+  GuestRequest
 } from '../types';
 import { get as idbGet, set as idbSet, del as idbDel, keys as idbKeys, createStore } from 'idb-keyval';
 
@@ -41,7 +42,8 @@ const STORAGE_KEYS = {
   PAYROLL: 'dmi_pos_payroll',
   DEBTS: 'dmi_pos_debts',
   LEDGER: 'dmi_pos_ledger',
-  IS_ACTIVATED: 'dmi_pos_is_activated'
+  IS_ACTIVATED: 'dmi_pos_is_activated',
+  GUEST_REQUESTS: 'dmi_pos_guest_requests'
 };
 
 const ACTIVATION_PIN = '8124'; // Master activation PIN for the developer to sell the app
@@ -815,5 +817,100 @@ export const localDb = {
       return await idbGet(key, customStore) || '';
     }
     return url;
+  },
+
+  // Guest Requests & Feedback (Airbnbs / Apartments / Hotels)
+  getGuestRequests: async (businessId: string, shopId: string): Promise<GuestRequest[]> => {
+    try {
+      const res = await fetch(`/api/guest-requests?businessId=${encodeURIComponent(businessId)}&shopId=${encodeURIComponent(shopId)}&t=${Date.now()}`);
+      if (res.ok) {
+        const serverData = await res.json();
+        // Fallback sync cache
+        await setLocal(STORAGE_KEYS.GUEST_REQUESTS, serverData);
+        return serverData;
+      }
+    } catch (e) {
+      console.warn('Network error fetching guest requests, using offline cache:', e);
+    }
+    const all = getLocal<GuestRequest[]>(STORAGE_KEYS.GUEST_REQUESTS, []);
+    return all.filter(r => r.businessId === businessId && r.shopId === shopId);
+  },
+  
+  addGuestRequest: async (request: Omit<GuestRequest, 'id'>): Promise<GuestRequest> => {
+    const id = crypto.randomUUID();
+    const newRequest: GuestRequest = { 
+      ...request, 
+      id,
+      synced: false,
+      lastUpdated: new Date().toISOString()
+    };
+    
+    // Attempt live dispatch to Express
+    try {
+      const res = await fetch('/api/guest-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRequest)
+      });
+      if (res.ok) {
+        const saved = await res.json();
+        const all = getLocal<GuestRequest[]>(STORAGE_KEYS.GUEST_REQUESTS, []);
+        await setLocal(STORAGE_KEYS.GUEST_REQUESTS, [...all, { ...saved, synced: true }]);
+        return saved;
+      }
+    } catch (e) {
+      console.warn('Network error posting guest request, using offline queue:', e);
+    }
+
+    // Local-only backup
+    const all = getLocal<GuestRequest[]>(STORAGE_KEYS.GUEST_REQUESTS, []);
+    await setLocal(STORAGE_KEYS.GUEST_REQUESTS, [...all, newRequest]);
+    return newRequest;
+  },
+
+  updateGuestRequestStatus: async (id: string, status: GuestRequest['status']): Promise<void> => {
+    const all = getLocal<GuestRequest[]>(STORAGE_KEYS.GUEST_REQUESTS, []);
+    const existing = all.find(r => r.id === id);
+    const lastUpdated = new Date().toISOString();
+    const updatedOfflineItem = existing 
+      ? { ...existing, status, lastUpdated, synced: false }
+      : { id, status, lastUpdated, synced: false };
+
+    try {
+      const res = await fetch(`/api/guest-requests/${encodeURIComponent(id)}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, lastUpdated })
+      });
+      if (res.ok) {
+        // also update offline version marked as synced
+        const updated = all.map(r => r.id === id ? { ...r, status, lastUpdated, synced: true } : r);
+        await setLocal(STORAGE_KEYS.GUEST_REQUESTS, updated);
+        return;
+      }
+    } catch (e) {
+      console.warn('Network error updating guest request, updated offline:', e);
+    }
+
+    const updated = all.map(r => r.id === id ? { ...r, status, lastUpdated, synced: false } : r);
+    await setLocal(STORAGE_KEYS.GUEST_REQUESTS, updated);
+  },
+
+  deleteGuestRequest: async (id: string): Promise<void> => {
+    try {
+      const res = await fetch(`/api/guest-requests/${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        const all = getLocal<GuestRequest[]>(STORAGE_KEYS.GUEST_REQUESTS, []);
+        await setLocal(STORAGE_KEYS.GUEST_REQUESTS, all.filter(r => r.id !== id));
+        return;
+      }
+    } catch (e) {
+      console.warn('Network error deleting guest request:', e);
+    }
+
+    const all = getLocal<GuestRequest[]>(STORAGE_KEYS.GUEST_REQUESTS, []);
+    await setLocal(STORAGE_KEYS.GUEST_REQUESTS, all.filter(r => r.id !== id));
   }
 };
