@@ -58,8 +58,8 @@ begin
         tc.constraint_type = 'FOREIGN KEY'
         and tc.table_schema = 'public'
         and (
-            tc.table_name in ('businesses', 'shops', 'products', 'sales', 'customers', 'suppliers', 'expenses', 'employees', 'attendance', 'payroll', 'debts', 'ledger')
-            or ccu.table_name in ('businesses', 'shops', 'products', 'sales', 'customers', 'suppliers', 'expenses', 'employees', 'attendance', 'payroll', 'debts', 'ledger')
+            tc.table_name in ('businesses', 'shops', 'products', 'sales', 'customers', 'suppliers', 'expenses', 'employees', 'attendance', 'payroll', 'debts', 'ledger', 'guest_requests', 'sale_items', 'licenses', 'login_history', 'piracy_alerts')
+            or ccu.table_name in ('businesses', 'shops', 'products', 'sales', 'customers', 'suppliers', 'expenses', 'employees', 'attendance', 'payroll', 'debts', 'ledger', 'guest_requests', 'sale_items', 'licenses', 'login_history', 'piracy_alerts')
         );
 
     -- 3. Safely drop all discovered foreign key constraints
@@ -118,7 +118,11 @@ begin
             array['guest_requests', 'shop_id'],
             array['sale_items', 'id'],
             array['sale_items', 'sale_id'],
-            array['sale_items', 'product_id']
+            array['sale_items', 'product_id'],
+            array['licenses', 'id'],
+            array['login_history', 'id'],
+            array['piracy_alerts', 'id'],
+            array['piracy_alerts', 'license_id']
         ];
     begin
         for i in 1 .. array_upper(tables_cols, 1) loop
@@ -431,6 +435,50 @@ create table if not exists public.sale_items (
     created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
+-- ==========================================
+-- 15. LICENSES TABLE (MASTER ADMIN)
+-- ==========================================
+create table if not exists public.licenses (
+    id text primary key,
+    license_key text unique not null,
+    client_name text not null,
+    status text default 'PENDING',
+    machine_id text,
+    authorized_domain text,
+    system_name text default 'DMi POS',
+    last_heartbeat timestamp with time zone,
+    penalty_amount numeric(12,2) default 0.00,
+    license_fee numeric(12,2) default 0.00,
+    grace_period_days integer default 7,
+    created_at timestamp with time zone default timezone('utc'::text, now()),
+    last_updated timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- ==========================================
+-- 16. LOGIN HISTORY TABLE (MASTER ADMIN / AUDIT)
+-- ==========================================
+create table if not exists public.login_history (
+    id text primary key,
+    user_id text,
+    user_name text,
+    role text,
+    status text,
+    timestamp timestamp with time zone default timezone('utc'::text, now()),
+    last_updated timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- ==========================================
+-- 17. PIRACY ALERTS TABLE (MASTER ADMIN / AUDIT)
+-- ==========================================
+create table if not exists public.piracy_alerts (
+    id text primary key,
+    license_id text references public.licenses(id) on delete cascade,
+    message text,
+    timestamp timestamp with time zone default timezone('utc'::text, now()),
+    metadata jsonb,
+    last_updated timestamp with time zone default timezone('utc'::text, now())
+);
+
 -- =========================================================================
 --             UPGRADE PRE-EXISTING TABLES WITH SYNC & ID COLUMNS
 -- =========================================================================
@@ -511,6 +559,16 @@ alter table public.sale_items add column if not exists created_at timestamp with
 alter table public.sale_items add column if not exists sale_id text;
 alter table public.sale_items add column if not exists product_id text;
 
+-- Licenses & piracy alerts patch
+alter table public.licenses add column if not exists last_updated timestamp with time zone default timezone('utc'::text, now());
+alter table public.licenses add column if not exists created_at timestamp with time zone default timezone('utc'::text, now());
+
+alter table public.login_history add column if not exists last_updated timestamp with time zone default timezone('utc'::text, now());
+
+alter table public.piracy_alerts add column if not exists last_updated timestamp with time zone default timezone('utc'::text, now());
+alter table public.piracy_alerts add column if not exists timestamp timestamp with time zone default timezone('utc'::text, now());
+alter table public.piracy_alerts add column if not exists license_id text;
+
 
 -- =========================================================================
 --            RE-ESTABLISH SAFE, CASCADE FOREIGN KEY RELATIONSHIPS
@@ -523,6 +581,10 @@ alter table public.sale_items add column if not exists product_id text;
 -- Shops
 alter table public.shops drop constraint if exists shops_business_id_fkey;
 alter table public.shops add constraint shops_business_id_fkey foreign key (business_id) references public.businesses(id) on delete cascade;
+
+-- Piracy Alerts fkey
+alter table public.piracy_alerts drop constraint if exists piracy_alerts_license_id_fkey;
+alter table public.piracy_alerts add constraint piracy_alerts_license_id_fkey foreign key (license_id) references public.licenses(id) on delete cascade;
 
 -- Products
 alter table public.products drop constraint if exists products_business_id_fkey;
@@ -730,7 +792,7 @@ $$ language plpgsql;
 do $$
 declare
     tbl text;
-    tables_list text[] := array['businesses', 'shops', 'products', 'customers', 'suppliers', 'expenses', 'employees', 'attendance', 'payroll', 'debts', 'ledger', 'guest_requests', 'sale_items'];
+    tables_list text[] := array['businesses', 'shops', 'products', 'customers', 'suppliers', 'expenses', 'employees', 'attendance', 'payroll', 'debts', 'ledger', 'guest_requests', 'sale_items', 'licenses', 'login_history', 'piracy_alerts'];
 begin
     foreach tbl in array tables_list loop
         execute format('
@@ -768,6 +830,9 @@ alter table public.debts enable row level security;
 alter table public.ledger enable row level security;
 alter table public.guest_requests enable row level security;
 alter table public.sale_items enable row level security;
+alter table public.licenses enable row level security;
+alter table public.login_history enable row level security;
+alter table public.piracy_alerts enable row level security;
 
 -- Basic policy: Allow authenticated queries (You can modify these to capture standard corporate sub-user business metadata)
 drop policy if exists "Allow all actions for authenticated users" on public.businesses;
@@ -826,6 +891,18 @@ drop policy if exists "Allow all actions for authenticated users" on public.sale
 create policy "Allow all actions for authenticated users" 
 on public.sale_items for all to authenticated using (true) with check (true);
 
+drop policy if exists "Allow all actions for authenticated users" on public.licenses;
+create policy "Allow all actions for authenticated users" 
+on public.licenses for all to authenticated using (true) with check (true);
+
+drop policy if exists "Allow all actions for authenticated users" on public.login_history;
+create policy "Allow all actions for authenticated users" 
+on public.login_history for all to authenticated using (true) with check (true);
+
+drop policy if exists "Allow all actions for authenticated users" on public.piracy_alerts;
+create policy "Allow all actions for authenticated users" 
+on public.piracy_alerts for all to authenticated using (true) with check (true);
+
 
 -- =========================================================================
 --                  ENABLE SUPABASE REAL-TIME REPLICATION
@@ -846,5 +923,7 @@ begin;
     public.debts,
     public.customers,
     public.guest_requests,
-    public.sale_items;
+    public.sale_items,
+    public.licenses,
+    public.piracy_alerts;
 commit;
