@@ -339,13 +339,22 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
       ? null 
       : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
+    // Generate secure license key format: DMI-XXXX-XXXX-XXXX
+    let finalKey = license.license_key;
+    if (!finalKey || finalKey.startsWith('PENDING_KEY_') || finalKey.startsWith('AWAITING_')) {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      const generateSegment = () => Array.from({length: 4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+      finalKey = `DMI-${generateSegment()}-${generateSegment()}-${generateSegment()}`;
+    }
+
     try {
       const { error } = await supabase
         .from('licenses')
         .update({
           status: 'ACTIVE',
           payment_status: 'PAID',
-          expires_at: expiresAt
+          expires_at: expiresAt,
+          license_key: finalKey
         })
         .eq('id', license.id);
 
@@ -372,12 +381,12 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
           await supabase.from('piracy_alerts').insert({
             id: crypto.randomUUID(),
             license_id: license.id,
-            message: `🟢 APPROVED MANUALLY: David approved KES ${Number(license.license_fee).toLocaleString()} for ${license.client_name}. App is live!`,
+            message: `🟢 APPROVED MANUALLY: David approved KES ${Number(license.license_fee).toLocaleString()} for ${license.client_name}. App is live! Generated License Key: ${finalKey}`,
             timestamp: new Date().toISOString()
           });
         } catch (ae) {}
 
-        alert('SUCCESS: Client unlocked instantly! They are now live on the network.');
+        alert(`SUCCESS: Client unlocked instantly! They are now live on the network.\n\nGenerated License Key: ${finalKey}`);
         fetchData();
       }
     } catch (e: any) {
@@ -398,8 +407,8 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
   };
 
   const filteredLicenses = licenses.filter(l => 
-    l.client_name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    l.license_key.toLowerCase().includes(searchQuery.toLowerCase())
+    (l.client_name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (l.license_key || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const isConfigMissing = !import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -706,7 +715,11 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                             <div className="text-[10px] text-slate-500 uppercase tracking-widest">{license.system_name}</div>
                           </td>
                           <td className="px-6 py-4">
-                            <code className="bg-slate-950 px-2 py-1 rounded-lg text-xs text-indigo-400 border border-slate-800">{license.license_key}</code>
+                            {license.license_key && !license.license_key.startsWith('PENDING_KEY_') ? (
+                              <code className="bg-slate-950 px-2 py-1 rounded-lg text-xs text-indigo-400 border border-slate-800">{license.license_key}</code>
+                            ) : (
+                              <span className="px-2.5 py-1 bg-amber-500/10 text-amber-500 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-amber-500/20">Awaiting Key Generation</span>
+                            )}
                           </td>
                           <td className="px-6 py-4 text-xs">
                             <div className="font-bold text-indigo-400">{license.plan_type || 'Classic License'}</div>

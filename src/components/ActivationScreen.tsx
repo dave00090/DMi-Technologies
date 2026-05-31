@@ -62,11 +62,8 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
     setPurchaseStep('verifying');
     setVerifyingStatus('Establishing secure connection to Safaricom payment gateway...');
 
-    // Generate license key in format DMI-XXXX-XXXX-XXXX
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    const generateSegment = () => Array.from({length: 4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-    const newLicenseKey = `DMI-${generateSegment()}-${generateSegment()}-${generateSegment()}`;
     const licenseId = crypto.randomUUID();
+    const placeholderKey = `PENDING_KEY_${licenseId.slice(0, 8)}`;
 
     const cleanPhone = clientPhone.replace(/\+/g, '').replace(/\s/g, '');
 
@@ -95,7 +92,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
         id: licenseId,
         client_name: clientShopName.trim(),
         system_name: selectedPlanDetails?.systemType || 'DMi POS',
-        license_key: newLicenseKey,
+        license_key: placeholderKey,
         license_fee: Number(selectedPlanDetails?.price || 0),
         status: 'PENDING', 
         machine_id: machineId,
@@ -162,20 +159,14 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
           if (statusRes.ok) {
             const txStatus = await statusRes.json();
             if (txStatus.status === 'SUCCESS') {
-              isCompleted = true;
-              cleanup();
+              clearInterval(pollInterval);
+              clearTimeout(timeout);
               
-              // Standard expiry duration: 1 Month (30 days) for subscription, null for One-off
-              const isOneOff = selectedPlanDetails?.name.toLowerCase().includes('one-off');
-              const expiresAtDate = isOneOff 
-                ? null 
-                : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+              setVerifyingStatus('Payment verified successfully! Awaiting owner David Migichi to approve your activation and generate your license key. Keep this window open; your system will launch automatically.');
 
               await supabase.from('licenses').update({
-                status: 'ACTIVE',
                 payment_status: 'PAID',
-                mpesa_reference: txStatus.reference || 'AUTOPAY',
-                expires_at: expiresAtDate
+                mpesa_reference: txStatus.reference || 'AUTOPAY'
               }).eq('id', licenseId);
 
               // Add sales entry
@@ -198,13 +189,11 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
                 await supabase.from('piracy_alerts').insert({
                   id: crypto.randomUUID(),
                   license_id: licenseId,
-                  message: `🟢 COMPLETED: Auto paid KES ${(selectedPlanDetails?.price || 0).toLocaleString()} via M-Pesa. Key applied!`,
+                  message: `🟢 COMPLETED STK PUSH: Client "${clientShopName.trim()}" automatically paid KES ${(selectedPlanDetails?.price || 0).toLocaleString()} via M-Pesa. Requesting owner license key.`,
                   timestamp: new Date().toISOString(),
                   metadata: { is_purchase: true, amount: selectedPlanDetails?.price }
                 });
               } catch (alertErr) {}
-
-              finalizeActivation(newLicenseKey);
             } else if (txStatus.status === 'FAILED') {
               isCompleted = true;
               cleanup();
@@ -259,11 +248,8 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
     setPurchaseStep('verifying');
     setVerifyingStatus('Submitting payment reference SAB... for Admin Verification...');
 
-    // Generate license key in format DMI-XXXX-XXXX-XXXX
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    const generateSegment = () => Array.from({length: 4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-    const newLicenseKey = `DMI-${generateSegment()}-${generateSegment()}-${generateSegment()}`;
     const licenseId = crypto.randomUUID();
+    const placeholderKey = `PENDING_KEY_${licenseId.slice(0, 8)}`;
 
     const cleanPhone = clientPhone.replace(/\+/g, '').replace(/\s/g, '');
     const txClean = mpesaTxCode.trim().toUpperCase();
@@ -274,7 +260,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
         id: licenseId,
         client_name: clientShopName.trim(),
         system_name: selectedPlanDetails?.systemType || 'DMi POS',
-        license_key: newLicenseKey,
+        license_key: placeholderKey,
         license_fee: Number(selectedPlanDetails?.price || 0),
         status: 'PENDING', 
         machine_id: machineId,
