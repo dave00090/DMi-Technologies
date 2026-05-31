@@ -34,7 +34,7 @@ import { SubscriptionLockScreen } from './components/SubscriptionLockScreen';
 import { masterService, supabase } from './services/masterService';
 
 import { InvoicesTab } from './components/InvoicesTab';
-import { GuestDesk } from './components/GuestDeskPanel';
+import { GuestDeskPanel } from './components/GuestDeskPanel';
 import { GuestPortal } from './components/GuestPortalView';
 
 export default function App() {
@@ -338,7 +338,7 @@ export default function App() {
       case 'invoices':
         return <InvoicesTab businessId={activeBusinessId} shopId={activeShopId} businessProfile={activeBusiness!} shopName={activeShop?.name || ''} />;
       case 'guest-requests':
-        return <GuestDesk businessId={activeBusinessId} shopId={activeShopId} user={user} />;
+        return <GuestDeskPanel businessId={activeBusinessId} shopId={activeShopId} user={user} />;
       case 'customers':
         return user.role === 'hr' ? <HRM businessId={activeBusinessId} shopId={activeShopId} user={user} /> : <Customers user={user} businessId={activeBusinessId} onViewLedger={(id) => handleViewLedger(id, 'CUSTOMER')} />;
       case 'settings':
