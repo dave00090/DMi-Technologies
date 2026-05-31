@@ -222,10 +222,13 @@ class SyncService {
 
     try {
       const response = await this.getApiClient().get('/api/health', { timeout: 4000 });
-      const online = response.status === 200;
+      const isHtml = typeof response.data === 'string' && (response.data.includes('<!DOCTYPE html') || response.data.includes('<html'));
+      const online = response.status === 200 && !isHtml;
       this.updateOnlineStatus(online);
       if (online) {
         this.lastConnectionError = '';
+      } else if (isHtml) {
+        this.lastConnectionError = 'Sync gateway URL points to a static site instead of a live API server.';
       } else {
         this.lastConnectionError = `Server returned status ${response.status}`;
       }
@@ -441,7 +444,18 @@ class SyncService {
       return true;
     } catch (e: any) {
       console.error('Core sync error:', e);
-      this.addLog('ERROR', `Error during sync: ${e.response?.data?.error || e.message}`);
+      
+      const errorMessage = e.response?.data?.error || e.message || '';
+      if (errorMessage.includes('Sync gateway URL points to a static frontend site')) {
+        const saved = localStorage.getItem('dmi_pos_sync_server_url');
+        if (saved) {
+          console.warn('Auto-healing: Custom Sync URL pointed to static site. Reverting to default.');
+          localStorage.removeItem('dmi_pos_sync_server_url');
+          this.addLog('INFO', 'Auto-healed: Reverted invalid custom Sync URL pointing to a static site back to default.');
+        }
+      }
+
+      this.addLog('ERROR', `Error during sync: ${errorMessage}`);
       this.isSyncing = false;
       this.notify();
       return false;

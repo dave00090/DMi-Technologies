@@ -1,5 +1,6 @@
 {
   "name": "DMi Retail Master POS",
   "description": "Professional Retail & Inventory Management System for the Kenyan Market. Powered by DMi Technologies.",
-  "requestFramePermissions": ["camera"]
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

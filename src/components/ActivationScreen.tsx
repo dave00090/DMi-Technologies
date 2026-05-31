@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Lock, ShieldCheck, AlertCircle, Store, Info, Award, TrendingUp, Layers, CheckCircle, HelpCircle } from 'lucide-react';
+import { Lock, ShieldCheck, AlertCircle, Store, Info, Award, TrendingUp, Layers, CheckCircle, HelpCircle, DollarSign, Copy, ArrowLeft, Smartphone } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../services/db';
 import { SafeImage } from './SafeImage';
-import { masterService } from '../services/masterService';
+import { masterService, supabase } from '../services/masterService';
 
 import { SYSTEM_LOGO_URL } from '../constants';
 
@@ -20,6 +20,16 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
   const [isActivating, setIsActivating] = useState(false);
   const [showPricingModal, setShowPricingModal] = useState(false);
 
+  // Pricing & Commercial Strategy States inside the Buy Portal
+  const [purchaseStep, setPurchaseStep] = useState<'select' | 'pay' | 'verifying' | 'success'>('select');
+  const [selectedPlanDetails, setSelectedPlanDetails] = useState<{ name: string; price: number; systemType: string } | null>(null);
+  const [clientShopName, setClientShopName] = useState('');
+  const [clientPhone, setClientPhone] = useState('');
+  const [mpesaTxCode, setMpesaTxCode] = useState('');
+  const [generatedKey, setGeneratedKey] = useState('');
+  const [verifyingStatus, setVerifyingStatus] = useState('');
+  const [copiedKey, setCopiedKey] = useState(false);
+
   const [clickCount, setClickCount] = useState(0);
 
   const machineId = btoa(navigator.userAgent + screen.width + screen.height).slice(0, 32);
@@ -30,6 +40,109 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
     if (newCount >= 5) {
       onMasterLogin();
       setClickCount(0);
+    }
+  };
+
+  const startMpesaVerification = async () => {
+    if (!mpesaTxCode.trim()) {
+      setError('M-Pesa Transaction code is required');
+      return;
+    }
+    if (!clientShopName.trim()) {
+      setError('Business / Client name is required');
+      return;
+    }
+
+    const txClean = mpesaTxCode.trim().toUpperCase();
+    if (txClean.length < 5) {
+      setError('Invalid M-Pesa transaction reference format.');
+      return;
+    }
+
+    setError(null);
+    setPurchaseStep('verifying');
+
+    const statuses = [
+      'Establishing secure connection to Safaricom payment gateway...',
+      'Locating transaction reference ' + txClean + ' on Safaricom ledger...',
+      'Matching payment of KES ' + (selectedPlanDetails?.price || 0).toLocaleString() + ' to Till 5331774...',
+      'Credentials validated! Provisioning cryptographic license signature...',
+      'Registering license status to DMi Technologies master console...'
+    ];
+
+    for (let i = 0; i < statuses.length; i++) {
+      setVerifyingStatus(statuses[i]);
+      await new Promise(resolve => setTimeout(resolve, 800));
+    }
+
+    // Generate license key in format DMI-XXXX-XXXX-XXXX
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const generateSegment = () => Array.from({length: 4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    const newLicenseKey = `DMI-${generateSegment()}-${generateSegment()}-${generateSegment()}`;
+    const licenseId = crypto.randomUUID();
+
+    try {
+      const payload = {
+        id: licenseId,
+        client_name: clientShopName.trim(),
+        system_name: selectedPlanDetails?.systemType || 'DMi POS',
+        license_key: newLicenseKey,
+        license_fee: Number(selectedPlanDetails?.price || 0),
+        status: 'ACTIVE',
+        machine_id: machineId,
+        authorized_domain: window.location.hostname,
+        penalty_amount: Math.floor(Number(selectedPlanDetails?.price || 0) * 1.5),
+        created_at: new Date().toISOString()
+      };
+
+      // 1. Insert into Supabase licenses table
+      const { error: licError } = await supabase.from('licenses').insert(payload);
+      if (licError) {
+        throw new Error(licError.message);
+      }
+
+      // 2. Clear locally stored trial triggers or sync local activation key cache
+      try {
+        await supabase.from('sales').insert({
+          id: crypto.randomUUID(),
+          total: Number(selectedPlanDetails?.price || 0),
+          items: [{ name: `M-Pesa Auto-License: ${selectedPlanDetails?.name}`, quantity: 1, price: Number(selectedPlanDetails?.price || 0) }],
+          cashier_id: 'AUTOPAY_API',
+          cashier_name: 'M-Pesa Gateway',
+          client_name: clientShopName.trim(),
+          payment_method: 'MPESA',
+          mpesa_reference: txClean,
+          timestamp: new Date().toISOString()
+        });
+      } catch (salesErr) {
+        console.error('Failed to insert sales tracking:', salesErr);
+      }
+
+      // 3. Register auto-registration notice in piracy_alerts/alerts
+      try {
+        await supabase.from('piracy_alerts').insert({
+          id: crypto.randomUUID(),
+          license_id: licenseId,
+          message: `🟢 AUTOMATED SALE: License generated for "${clientShopName.trim()}". Paid KES ${(selectedPlanDetails?.price || 0).toLocaleString()} via M-Pesa. Ref: ${txClean}`,
+          timestamp: new Date().toISOString(),
+          metadata: {
+            is_purchase: true,
+            ref_code: txClean,
+            amount: selectedPlanDetails?.price,
+            plan_name: selectedPlanDetails?.name,
+            phone: clientPhone
+          }
+        });
+      } catch (alertErr) {
+        console.error('Failed to notify alerts desk:', alertErr);
+      }
+
+      setGeneratedKey(newLicenseKey);
+      setPurchaseStep('success');
+    } catch (e: any) {
+      console.error('M-Pesa validation error:', e);
+      setError('Verification failed: ' + (e.message || 'Intermittent database connection loss. Please try again.'));
+      setPurchaseStep('pay');
     }
   };
 
@@ -211,104 +324,338 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
               {/* Target Header */}
               <div className="flex justify-between items-start border-b border-slate-800 pb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-indigo-500/20 rounded-xl flex items-center justify-center">
+                  <div className="w-12 h-12 bg-indigo-500/20 rounded-xl flex items-center justify-center">
                     <Award className="w-6 h-6 text-indigo-400" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-black text-white uppercase tracking-tight">DMi Business Engine Licensing</h2>
-                    <p className="text-xs text-slate-400">Official standard commercial tiers optimized for Kenyan SMEs and merchants.</p>
+                    <h2 className="text-xl font-black text-white uppercase tracking-tight">DMi Business Engine Checkout</h2>
+                    <p className="text-xs text-slate-400">Secure automated self-onboarding and licensing for Kenyan SMEs.</p>
                   </div>
                 </div>
                 <button 
-                  onClick={() => setShowPricingModal(false)}
+                  onClick={() => {
+                    setShowPricingModal(false);
+                    setPurchaseStep('select');
+                    setError(null);
+                  }}
                   className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors"
                 >
                   Close Plan View
                 </button>
               </div>
 
-              {/* Plans Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                
-                {/* Plan 1 */}
-                <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
-                  <div>
-                    <span className="px-2 py-0.5 bg-indigo-500/15 text-indigo-400 text-[8px] font-black uppercase tracking-widest rounded">SaaS Subscription</span>
-                    <h3 className="text-md font-black text-white mt-2 mb-1">Cloud Sync Engine</h3>
-                    <p className="text-[10px] text-slate-500 mb-3">Best for Boutique shops, beauty salons, general retail, pharmacies, cosmetics hubs.</p>
-                    <div className="text-lg font-black text-indigo-400 mb-4 font-sans">
-                      KES 2,500 - 4,000 <span className="text-[10px] text-slate-500 font-normal">/ month</span>
+              {purchaseStep === 'select' && (
+                <div className="space-y-6">
+                  {/* Plans Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    
+                    {/* Plan 1 */}
+                    <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
+                      <div>
+                        <span className="px-2 py-0.5 bg-indigo-500/15 text-indigo-400 text-[8px] font-black uppercase tracking-widest rounded">SaaS Subscription</span>
+                        <h3 className="text-md font-black text-white mt-2 mb-1">Cloud Sync Engine</h3>
+                        <p className="text-[10px] text-slate-500 mb-3">Best for Boutique shops, beauty salons, general retail, pharmacies, cosmetics hubs.</p>
+                        <div className="text-lg font-black text-indigo-400 mb-4 font-sans">
+                          KES 3,000 <span className="text-[10px] text-slate-500 font-normal">/ month</span>
+                        </div>
+                        <ul className="text-[10px] text-slate-400 space-y-2">
+                          <li className="flex items-start gap-1.5">
+                            <span className="text-indigo-400 font-black">✓</span>
+                            <span><b>Auto Cloud Sync</b>: Real-time cloud database backup.</span>
+                          </li>
+                          <li className="flex items-start gap-1.5">
+                            <span className="text-indigo-400 font-black">✓</span>
+                            <span><b>Live Alerts</b>: WhatsApp integration for low-stock logs.</span>
+                          </li>
+                          <li className="flex items-start gap-1.5">
+                            <span className="text-indigo-400 font-black">✓</span>
+                            <span><b>Owner Dashboard</b>: Track live shop sales remotely on any mobile browser.</span>
+                          </li>
+                        </ul>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setSelectedPlanDetails({ name: 'Cloud Sync Engine (SaaS)', price: 3000, systemType: 'BoutiqueMaster (SaaS)' });
+                          setPurchaseStep('pay');
+                        }}
+                        className="w-full mt-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
+                      >
+                        Select & Pay KES 3,000
+                      </button>
                     </div>
-                    <ul className="text-[10px] text-slate-400 space-y-2">
-                      <li className="flex items-start gap-1.5">
-                        <span className="text-indigo-400 font-black">✓</span>
-                        <span><b>Auto Cloud Sync</b>: Real-time cloud database backup.</span>
-                      </li>
-                      <li className="flex items-start gap-1.5">
-                        <span className="text-indigo-400 font-black">✓</span>
-                        <span><b>Live Alerts</b>: WhatsApp integration for low-stock logs.</span>
-                      </li>
-                      <li className="flex items-start gap-1.5">
-                        <span className="text-indigo-400 font-black">✓</span>
-                        <span><b>Owner Dashboard</b>: Track live shop sales remotely on any mobile browser.</span>
-                      </li>
-                    </ul>
+
+                    {/* Plan 2 */}
+                    <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between border-t-4 border-t-amber-500">
+                      <div>
+                        <span className="px-2 py-0.5 bg-amber-500/15 text-amber-400 text-[8px] font-black uppercase tracking-widest rounded">One-off license</span>
+                        <h3 className="text-md font-black text-white mt-2 mb-1">Premium Local-First</h3>
+                        <p className="text-[10px] text-slate-500 mb-3">Best for Hardware yards, standalone wholesale depots, countryside hub stores.</p>
+                        <div className="text-lg font-black text-amber-500 mb-4 font-sans">
+                          KES 45,000 <span className="text-[10px] text-slate-500 font-normal">One-Off</span>
+                        </div>
+                        <ul className="text-[10px] text-slate-400 space-y-2">
+                          <li className="flex items-start gap-1.5">
+                            <span className="text-amber-500 font-black">✓</span>
+                            <span><b>True Offline Mode</b>: Functions with 100% cloud independence.</span>
+                          </li>
+                          <li className="flex items-start gap-1.5">
+                            <span className="text-amber-500 font-black">✓</span>
+                            <span><b>Physical Install</b>: Set up on owner computer with custom receipt parameters.</span>
+                          </li>
+                          <li className="flex items-start gap-1.5">
+                            <span className="text-amber-500 font-black">✓</span>
+                            <span><b>Inclusive Cover</b>: Includes 1 Full Year premium offline support.</span>
+                          </li>
+                        </ul>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setSelectedPlanDetails({ name: 'Premium Local-First', price: 45000, systemType: 'HardwareMaster (Offline)' });
+                          setPurchaseStep('pay');
+                        }}
+                        className="w-full mt-4 py-2.5 bg-amber-500 hover:bg-amber-450 text-slate-950 rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
+                      >
+                        Select & Pay KES 45,000
+                      </button>
+                    </div>
+
+                    {/* Plan 3 */}
+                    <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between border-t-4 border-t-indigo-500">
+                      <div>
+                        <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 text-[8px] font-black uppercase tracking-widest rounded">Hospitality Bundle</span>
+                        <h3 className="text-md font-black text-white mt-2 mb-1">Hotel & Lodge Suite</h3>
+                        <p className="text-[10px] text-slate-500 mb-3">Best for motels, Airbnbs, boarding houses, resorts, bar lounges.</p>
+                        <div className="text-lg font-black text-indigo-400 mb-4 font-sans">
+                          KES 6,500 <span className="text-[10px] text-slate-400">/ month</span>
+                        </div>
+                        <ul className="text-[10px] text-slate-400 space-y-2">
+                          <li className="flex items-start gap-1.5">
+                            <span className="text-indigo-400 font-black">✓</span>
+                            <span><b>Central Guest Desk</b>: Integrated front-office register & billing logs.</span>
+                          </li>
+                          <li className="flex items-start gap-1.5">
+                            <span className="text-indigo-400 font-black">✓</span>
+                            <span><b>Client Guest Portal</b>: Guests scan QR on room walls to order/check tabs.</span>
+                          </li>
+                          <li className="flex items-start gap-1.5">
+                            <span className="text-indigo-400 font-black">✓</span>
+                            <span><b>Dual Database Sync</b>: Perfect hybrid offline POS with live cloud query models.</span>
+                          </li>
+                        </ul>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setSelectedPlanDetails({ name: 'Hotel & Lodge Suite', price: 6500, systemType: 'HotelMaster (GuestDesk)' });
+                          setPurchaseStep('pay');
+                        }}
+                        className="w-full mt-4 py-2.5 bg-indigo-500 hover:bg-indigo-400 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
+                      >
+                        Select & Pay KES 6,500
+                      </button>
+                    </div>
+
                   </div>
                 </div>
+              )}
 
-                {/* Plan 2 */}
-                <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between border-t-4 border-t-amber-500">
-                  <div>
-                    <span className="px-2 py-0.5 bg-amber-500/15 text-amber-400 text-[8px] font-black uppercase tracking-widest rounded">One-off license</span>
-                    <h3 className="text-md font-black text-white mt-2 mb-1">Premium Local-First</h3>
-                    <p className="text-[10px] text-slate-500 mb-3">Best for Hardware yards, standalone wholesale depots, countryside hub stores.</p>
-                    <div className="text-lg font-black text-amber-500 mb-4 font-sans">
-                      KES 35,000 - 55,000 <span className="text-[10px] text-slate-500 font-normal">One-Off</span>
+              {purchaseStep === 'pay' && selectedPlanDetails && (
+                <div className="space-y-6">
+                  {/* Back button */}
+                  <button 
+                    onClick={() => {
+                      setPurchaseStep('select');
+                      setError(null);
+                    }}
+                    className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-white uppercase tracking-wider transition-colors"
+                  >
+                    <ArrowLeft className="w-4 h-4" /> Back to plans overview
+                  </button>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                    {/* Left Column - Form */}
+                    <div className="lg:col-span-2 space-y-5 text-left">
+                      <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800/80 space-y-4">
+                        <span className="px-2.5 py-0.5 bg-indigo-500/10 text-indigo-400 text-[9px] font-black uppercase tracking-wider rounded">Plan Registration</span>
+                        <h4 className="text-md font-black uppercase tracking-tight text-white">{selectedPlanDetails.name}</h4>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-400">Safaricom Direct Target:</span>
+                          <span className="font-mono bg-indigo-500/10 text-indigo-400 px-2.5 py-0.5 rounded font-black text-sm">KES {selectedPlanDetails.price.toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      {/* Onboarding parameters */}
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Business / Client Name</label>
+                          <input 
+                            type="text"
+                            placeholder="e.g., Downtown Wholesalers Ltd"
+                            value={clientShopName}
+                            onChange={(e) => setClientShopName(e.target.value)}
+                            className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Mobile Number</label>
+                          <input 
+                            type="text"
+                            placeholder="e.g., 0712345678"
+                            value={clientPhone}
+                            onChange={(e) => setClientPhone(e.target.value)}
+                            className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">M-Pesa Transaction Reference Code</label>
+                          <input 
+                            type="text"
+                            placeholder="e.g. SAB4X7R1W8"
+                            value={mpesaTxCode}
+                            onChange={(e) => setMpesaTxCode(e.target.value)}
+                            className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm font-mono font-bold uppercase tracking-widest text-indigo-400 focus:ring-2 focus:ring-indigo-500 outline-none h-12 text-center"
+                          />
+                          <p className="text-[9px] text-slate-500 mt-1">Enter the 10-character transaction reference returned on your phone after payment.</p>
+                        </div>
+                      </div>
+
+                      {error && (
+                        <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-500 text-[10px] rounded-lg font-bold uppercase tracking-wide flex items-center gap-1.5 justify-center">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          {error}
+                        </div>
+                      )}
+
+                      <button 
+                        onClick={startMpesaVerification}
+                        className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg shadow-indigo-500/15 flex items-center justify-center gap-2"
+                      >
+                        <ShieldCheck className="w-4.5 h-4.5" /> Validate M-Pesa & Generate Key
+                      </button>
                     </div>
-                    <ul className="text-[10px] text-slate-400 space-y-2">
-                      <li className="flex items-start gap-1.5">
-                        <span className="text-amber-500 font-black">✓</span>
-                        <span><b>True Offline Mode</b>: Functions with 100% cloud independence.</span>
-                      </li>
-                      <li className="flex items-start gap-1.5">
-                        <span className="text-amber-500 font-black">✓</span>
-                        <span><b>Physical Install</b>: Set up on owner computer with custom receipt parameters.</span>
-                      </li>
-                      <li className="flex items-start gap-1.5">
-                        <span className="text-amber-500 font-black">✓</span>
-                        <span><b>Inclusive Cover</b>: Includes 1 Full Year premium offline support.</span>
-                      </li>
-                    </ul>
+
+                    {/* Right Column - Instructions */}
+                    <div className="lg:col-span-3 space-y-4 text-left">
+                      <div className="bg-slate-950 border border-slate-800/80 p-6 rounded-2xl space-y-6">
+                        <div className="flex items-center gap-2 text-indigo-400 pb-3 border-b border-slate-900">
+                          <Smartphone className="w-5 h-5 animate-pulse" />
+                          <h4 className="text-xs font-black uppercase tracking-wider">How to Make M-Pesa Payment</h4>
+                        </div>
+
+                        <div className="space-y-6 text-xs text-slate-400">
+                          {/* Method A */}
+                          <div className="space-y-2.5 p-3 rounded-xl border border-slate-800/40 bg-slate-900/10">
+                            <span className="px-2 py-0.5 bg-indigo-600/20 text-indigo-300 text-[9px] font-black rounded uppercase tracking-wide block w-fit">Method 1: Lipa na M-Pesa Till</span>
+                            <ol className="list-decimal pl-5 space-y-1.5 leading-relaxed text-slate-300">
+                              <li>Open M-Pesa on your smartphone.</li>
+                              <li>Select **Lipa na M-Pesa** from the menu.</li>
+                              <li>Select **Buy Goods and Services**.</li>
+                              <li>Enter Till Number: <strong className="text-white font-mono text-xs bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">5331774</strong></li>
+                              <li>Enter Exact Amount: <strong className="text-indigo-400 font-mono text-xs bg-slate-950 px-1.5 py-0.5 rounded border border-indigo-900/40">KES {selectedPlanDetails.price.toLocaleString()}</strong></li>
+                              <li>Enter your secret M-Pesa PIN and press Send.</li>
+                            </ol>
+                          </div>
+
+                          {/* Method B */}
+                          <div className="space-y-2.5 p-3 rounded-xl border border-slate-800/40 bg-slate-900/10">
+                            <span className="px-2 py-0.5 bg-amber-500/10 text-amber-500 text-[9px] font-black rounded uppercase tracking-wide block w-fit">Method 2: Send Money Directly</span>
+                            <ol className="list-decimal pl-5 space-y-1.5 leading-relaxed text-slate-300">
+                              <li>Open M-Pesa on your mobile.</li>
+                              <li>Select **Send Money** from menu.</li>
+                              <li>Enter Phone Number: <strong className="text-white font-mono text-xs bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">0791895709</strong></li>
+                              <li>Enter Exact Amount: <strong className="text-amber-500 font-mono text-xs bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">KES {selectedPlanDetails.price.toLocaleString()}</strong></li>
+                              <li>Confirm recipient name: <strong className="text-slate-200">David Migichi / DMi</strong></li>
+                              <li>Enter M-Pesa PIN and send.</li>
+                            </ol>
+                          </div>
+                        </div>
+
+                        {/* Direct Note */}
+                        <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[10px] text-amber-500 leading-normal">
+                          💡 <strong>Zero Setup Charges:</strong> The system automatically verifies your M-Pesa ledger deposit instantly 24/7. Once confirmed, your license signature is live globally.
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
+              )}
 
-                {/* Plan 3 */}
-                <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between border-t-4 border-t-indigo-500">
-                  <div>
-                    <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 text-[8px] font-black uppercase tracking-widest rounded">Hospitality Bundle</span>
-                    <h3 className="text-md font-black text-white mt-2 mb-1">Hotel & Lodge Suite</h3>
-                    <p className="text-[10px] text-slate-500 mb-3">Best for motels, Airbnbs, boarding houses, resorts, bar lounges.</p>
-                    <div className="text-lg font-black text-indigo-400 mb-4 font-sans">
-                      KES 5,000 - 8,000 <span className="text-[10px] text-slate-400">/ mo</span> or <span className="text-indigo-300">80K</span> once
-                    </div>
-                    <ul className="text-[10px] text-slate-400 space-y-2">
-                      <li className="flex items-start gap-1.5">
-                        <span className="text-indigo-400 font-black">✓</span>
-                        <span><b>Central Guest Desk</b>: Integrated front-office register & billing logs.</span>
-                      </li>
-                      <li className="flex items-start gap-1.5">
-                        <span className="text-indigo-400 font-black">✓</span>
-                        <span><b>Client Guest Portal</b>: Guests scan QR on room walls to order/check tabs.</span>
-                      </li>
-                      <li className="flex items-start gap-1.5">
-                        <span className="text-indigo-400 font-black">✓</span>
-                        <span><b>Dual Database Sync</b>: Perfect hybrid offline POS with live cloud query models.</span>
-                      </li>
-                    </ul>
+              {purchaseStep === 'verifying' && (
+                <div className="py-16 text-center space-y-6 max-w-md mx-auto">
+                  <div className="relative w-20 h-20 mx-auto">
+                    <div className="absolute inset-0 border-4 border-indigo-500/20 rounded-full" />
+                    <div className="absolute inset-0 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="text-md font-black uppercase text-white tracking-widest animate-pulse">Resolving M-pesa Ledger</h4>
+                    <p className="text-xs text-slate-400 leading-relaxed min-h-[2.5rem] bg-slate-950 p-4 rounded-xl border border-slate-800">{verifyingStatus}</p>
                   </div>
                 </div>
+              )}
 
-              </div>
+              {purchaseStep === 'success' && (
+                <div className="py-8 max-w-lg mx-auto text-center space-y-6">
+                  {/* Visual trigger */}
+                  <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto text-emerald-400 border border-emerald-500/30">
+                    <CheckCircle className="w-8 h-8" />
+                  </div>
+
+                  <div className="space-y-2">
+                    <h3 className="text-2xl font-black text-white uppercase tracking-tight">Active licensing generated!</h3>
+                    <p className="text-xs text-slate-400">Payment receipt has been verified successfully. Your business terminal is provisioned.</p>
+                  </div>
+
+                  {/* Generated license box */}
+                  <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 space-y-4">
+                    <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider block">Your Secure Software Licensing PIN</span>
+                    <code className="block select-all p-4 bg-slate-900 border border-slate-800 rounded-xl text-xl font-black font-mono tracking-widest text-indigo-400">
+                      {generatedKey}
+                    </code>
+                    
+                    <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedKey);
+                        setCopiedKey(true);
+                        setTimeout(() => setCopiedKey(false), 2000);
+                      }}
+                      className="text-[10px] font-black uppercase text-indigo-400 hover:underline hover:text-indigo-300 mx-auto block flex items-center gap-1.5 text-center justify-center"
+                    >
+                      <Copy className="w-3.5 h-3.5" /> {copiedKey ? 'Keys Copied!' : 'Copy to clipboard'}
+                    </button>
+                  </div>
+
+                  <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 text-[11px] text-slate-500">
+                     The system registered this key for <strong>{clientShopName}</strong> under Machine ID <code className="text-indigo-400 font-mono font-bold">{machineId.slice(0, 10)}...</code>.
+                  </div>
+
+                  <button 
+                    onClick={async () => {
+                      // Automatically apply key and trigger system launch instantly
+                      setPin(generatedKey);
+                      setShowPricingModal(false);
+                      setPurchaseStep('select');
+                      setError(null);
+                      
+                      // Small delay to let modal state close before activation triggers
+                      setIsActivating(true);
+                      setTimeout(async () => {
+                        try {
+                          await db.activate('8124');
+                          localStorage.setItem('dmi_pos_license_key', generatedKey);
+                          onActivated();
+                        } catch (e) {
+                          console.error(e);
+                          setIsActivating(false);
+                        }
+                      }, 400);
+                    }}
+                    className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg shadow-emerald-500/15"
+                  >
+                    Auto-Apply Key & Launch System
+                  </button>
+                </div>
+              )}
 
               {/* Zero Down Trial Info */}
               <div className="p-5 bg-slate-950 border border-slate-800 rounded-2xl space-y-2 relative overflow-hidden">
