@@ -49,6 +49,11 @@ export interface License {
   penalty_amount: number;
   license_fee: number;
   grace_period_days?: number;
+  plan_type: string | null;
+  expires_at: string | null;
+  payment_status: string | null;
+  payment_phone: string | null;
+  mpesa_reference: string | null;
 }
 
 export const masterService = {
@@ -100,6 +105,14 @@ export const masterService = {
       }
       
       if (data.status === 'LOCKED') return { success: false, message: 'License Revoked/Locked', isLocked: true };
+
+      // Subscription Expiry Check
+      if (data.expires_at) {
+        const expiresAt = new Date(data.expires_at);
+        if (expiresAt < new Date()) {
+          return { success: false, message: 'Subscription Expired', isSubscriptionExpired: true, data };
+        }
+      }
 
       // Anti-Piracy Check
       if (data.machine_id && data.machine_id !== machineId) {

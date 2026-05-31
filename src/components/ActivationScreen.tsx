@@ -43,37 +43,24 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
     }
   };
 
+  const finalizeActivation = (key: string) => {
+    setGeneratedKey(key);
+    setPurchaseStep('success');
+  };
+
   const startMpesaVerification = async () => {
-    if (!mpesaTxCode.trim()) {
-      setError('M-Pesa Transaction code is required');
-      return;
-    }
     if (!clientShopName.trim()) {
       setError('Business / Client name is required');
       return;
     }
-
-    const txClean = mpesaTxCode.trim().toUpperCase();
-    if (txClean.length < 5) {
-      setError('Invalid M-Pesa transaction reference format.');
+    if (!clientPhone.trim()) {
+      setError('Mobile Number is required for payment tracking');
       return;
     }
 
     setError(null);
     setPurchaseStep('verifying');
-
-    const statuses = [
-      'Establishing secure connection to Safaricom payment gateway...',
-      'Locating transaction reference ' + txClean + ' on Safaricom ledger...',
-      'Matching payment of KES ' + (selectedPlanDetails?.price || 0).toLocaleString() + ' to Till 5331774...',
-      'Credentials validated! Provisioning cryptographic license signature...',
-      'Registering license status to DMi Technologies master console...'
-    ];
-
-    for (let i = 0; i < statuses.length; i++) {
-      setVerifyingStatus(statuses[i]);
-      await new Promise(resolve => setTimeout(resolve, 800));
-    }
+    setVerifyingStatus('Establishing secure connection to Safaricom payment gateway...');
 
     // Generate license key in format DMI-XXXX-XXXX-XXXX
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -81,67 +68,268 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
     const newLicenseKey = `DMI-${generateSegment()}-${generateSegment()}-${generateSegment()}`;
     const licenseId = crypto.randomUUID();
 
+    const cleanPhone = clientPhone.replace(/\+/g, '').replace(/\s/g, '');
+
     try {
+      // 1. Submit STK Push Request
+      setVerifyingStatus(`Sending M-Pesa STK Push PIN prompt to ${cleanPhone}...`);
+      const stkResponse = await fetch('/api/mpesa/stkpush', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: cleanPhone,
+          amount: selectedPlanDetails?.price || 0
+        })
+      });
+
+      const stkData = await stkResponse.json();
+      if (!stkResponse.ok || stkData.error) {
+        throw new Error(stkData.error || 'Failed to trigger payment STK push. Check phone format or credentials.');
+      }
+
+      const checkoutId = stkData.CheckoutRequestID;
+      setVerifyingStatus(`STK PIN prompt sent to ${cleanPhone}! Please check your phone, enter your PIN for KES ${(selectedPlanDetails?.price || 0).toLocaleString()} to authorize.`);
+
+      // 2. Pre-create PENDING license record in Supabase
       const payload = {
         id: licenseId,
         client_name: clientShopName.trim(),
         system_name: selectedPlanDetails?.systemType || 'DMi POS',
         license_key: newLicenseKey,
         license_fee: Number(selectedPlanDetails?.price || 0),
-        status: 'ACTIVE',
+        status: 'PENDING', 
         machine_id: machineId,
         authorized_domain: window.location.hostname,
         penalty_amount: Math.floor(Number(selectedPlanDetails?.price || 0) * 1.5),
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        payment_status: 'PENDING_PAYMENT',
+        payment_phone: cleanPhone,
+        plan_type: selectedPlanDetails?.name,
+        mpesa_reference: mpesaTxCode.trim().toUpperCase() || 'STK_AUTO_WAIT'
       };
 
-      // 1. Insert into Supabase licenses table
-      const { error: licError } = await supabase.from('licenses').insert(payload);
-      if (licError) {
-        throw new Error(licError.message);
-      }
+      await supabase.from('licenses').insert(payload);
 
-      // 2. Clear locally stored trial triggers or sync local activation key cache
-      try {
-        await supabase.from('sales').insert({
-          id: crypto.randomUUID(),
-          total: Number(selectedPlanDetails?.price || 0),
-          items: [{ name: `M-Pesa Auto-License: ${selectedPlanDetails?.name}`, quantity: 1, price: Number(selectedPlanDetails?.price || 0) }],
-          cashier_id: 'AUTOPAY_API',
-          cashier_name: 'M-Pesa Gateway',
-          client_name: clientShopName.trim(),
-          payment_method: 'MPESA',
-          mpesa_reference: txClean,
-          timestamp: new Date().toISOString()
-        });
-      } catch (salesErr) {
-        console.error('Failed to insert sales tracking:', salesErr);
-      }
-
-      // 3. Register auto-registration notice in piracy_alerts/alerts
+      // Notify developer queue and alerts
       try {
         await supabase.from('piracy_alerts').insert({
           id: crypto.randomUUID(),
           license_id: licenseId,
-          message: `🟢 AUTOMATED SALE: License generated for "${clientShopName.trim()}". Paid KES ${(selectedPlanDetails?.price || 0).toLocaleString()} via M-Pesa. Ref: ${txClean}`,
+          message: `📡 PENDING: Client "${clientShopName.trim()}" is paying KES ${(selectedPlanDetails?.price || 0).toLocaleString()} via M-Pesa mobile ${cleanPhone}. Reference requested.`,
           timestamp: new Date().toISOString(),
           metadata: {
-            is_purchase: true,
+            is_purchase_pending: true,
+            amount: selectedPlanDetails?.price,
+            plan_name: selectedPlanDetails?.name,
+            phone: cleanPhone
+          }
+        });
+      } catch (err) {}
+
+      // 3. Start reactive polling
+      let isCompleted = false;
+
+      // Define cleanup
+      let cleanup = () => {};
+
+      // Realtime subscription watching if the master admin updates status or allows it manually
+      const channel = supabase
+        .channel(`license-approve-watch-${licenseId}`)
+        .on('postgres_changes', 
+          { 
+            event: 'UPDATE', 
+            schema: 'public', 
+            table: 'licenses',
+            filter: `id=eq.${licenseId}`
+          }, 
+          (payload) => {
+            if (payload.new && payload.new.status === 'ACTIVE') {
+              if (!isCompleted) {
+                isCompleted = true;
+                cleanup();
+                finalizeActivation(payload.new.license_key);
+              }
+            }
+          }
+        )
+        .subscribe();
+
+      // Long-polling M-Pesa transaction status
+      const pollInterval = setInterval(async () => {
+        if (isCompleted) return;
+        try {
+          const statusRes = await fetch(`/api/mpesa/status/${checkoutId}`);
+          if (statusRes.ok) {
+            const txStatus = await statusRes.json();
+            if (txStatus.status === 'SUCCESS') {
+              isCompleted = true;
+              cleanup();
+              
+              // Standard expiry duration: 1 Month (30 days) for subscription, null for One-off
+              const isOneOff = selectedPlanDetails?.name.toLowerCase().includes('one-off');
+              const expiresAtDate = isOneOff 
+                ? null 
+                : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+              await supabase.from('licenses').update({
+                status: 'ACTIVE',
+                payment_status: 'PAID',
+                mpesa_reference: txStatus.reference || 'AUTOPAY',
+                expires_at: expiresAtDate
+              }).eq('id', licenseId);
+
+              // Add sales entry
+              try {
+                await supabase.from('sales').insert({
+                  id: crypto.randomUUID(),
+                  total: Number(selectedPlanDetails?.price || 0),
+                  items: [{ name: `M-Pesa Auto-License: ${selectedPlanDetails?.name}`, quantity: 1, price: Number(selectedPlanDetails?.price || 0) }],
+                  cashier_id: 'AUTOPAY_API',
+                  cashier_name: 'M-Pesa Webhook',
+                  client_name: clientShopName.trim(),
+                  payment_method: 'MPESA',
+                  mpesa_reference: txStatus.reference || 'AUTOPAY',
+                  timestamp: new Date().toISOString()
+                });
+              } catch (se) {}
+
+              // Notify success
+              try {
+                await supabase.from('piracy_alerts').insert({
+                  id: crypto.randomUUID(),
+                  license_id: licenseId,
+                  message: `🟢 COMPLETED: Auto paid KES ${(selectedPlanDetails?.price || 0).toLocaleString()} via M-Pesa. Key applied!`,
+                  timestamp: new Date().toISOString(),
+                  metadata: { is_purchase: true, amount: selectedPlanDetails?.price }
+                });
+              } catch (alertErr) {}
+
+              finalizeActivation(newLicenseKey);
+            } else if (txStatus.status === 'FAILED') {
+              isCompleted = true;
+              cleanup();
+              setError(txStatus.resultDesc || 'M-Pesa transaction declined by client.');
+              setPurchaseStep('pay');
+            }
+          }
+        } catch (pollErr: any) {
+          console.error('Polling error:', pollErr);
+        }
+      }, 3000);
+
+      // Safety timeout after 2 minutes
+      const timeout = setTimeout(() => {
+        if (!isCompleted) {
+          isCompleted = true;
+          cleanup();
+          // Drop back to pay step but with helper code so they can await manual receipt checks
+          setError('STK verification took too long. Keep this page open; David can allow & activate your device manually from Master Admin.');
+          setPurchaseStep('pay');
+        }
+      }, 120000);
+
+      cleanup = () => {
+        clearInterval(pollInterval);
+        clearTimeout(timeout);
+        if (channel) supabase.removeChannel(channel);
+      };
+
+    } catch (e: any) {
+      console.error('M-Pesa checkout trigger failed:', e);
+      setError('Checkout failed: ' + (e.message || 'Check terminal network and credentials.'));
+      setPurchaseStep('pay');
+    }
+  };
+
+  const handleManualSubmitForApproval = async () => {
+    if (!clientShopName.trim()) {
+      setError('Business / Client name is required');
+      return;
+    }
+    if (!clientPhone.trim()) {
+      setError('Mobile Number is required for manual matching');
+      return;
+    }
+    if (!mpesaTxCode.trim()) {
+      setError('M-Pesa Transaction receipt code is required for manual verification');
+      return;
+    }
+
+    setError(null);
+    setPurchaseStep('verifying');
+    setVerifyingStatus('Submitting payment reference SAB... for Admin Verification...');
+
+    // Generate license key in format DMI-XXXX-XXXX-XXXX
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const generateSegment = () => Array.from({length: 4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    const newLicenseKey = `DMI-${generateSegment()}-${generateSegment()}-${generateSegment()}`;
+    const licenseId = crypto.randomUUID();
+
+    const cleanPhone = clientPhone.replace(/\+/g, '').replace(/\s/g, '');
+    const txClean = mpesaTxCode.trim().toUpperCase();
+
+    try {
+      // Create PENDING license record in Supabase so developer can see it and allow
+      const payload = {
+        id: licenseId,
+        client_name: clientShopName.trim(),
+        system_name: selectedPlanDetails?.systemType || 'DMi POS',
+        license_key: newLicenseKey,
+        license_fee: Number(selectedPlanDetails?.price || 0),
+        status: 'PENDING', 
+        machine_id: machineId,
+        authorized_domain: window.location.hostname,
+        penalty_amount: Math.floor(Number(selectedPlanDetails?.price || 0) * 1.5),
+        created_at: new Date().toISOString(),
+        payment_status: 'PENDING_PAYMENT',
+        payment_phone: cleanPhone,
+        plan_type: selectedPlanDetails?.name,
+        mpesa_reference: txClean
+      };
+
+      await supabase.from('licenses').insert(payload);
+
+      // Notify developer logs
+      try {
+        await supabase.from('piracy_alerts').insert({
+          id: crypto.randomUUID(),
+          license_id: licenseId,
+          message: `📡 PENDING APPROVAL: Client submitted manual reference "${txClean}" for KES ${(selectedPlanDetails?.price || 0).toLocaleString()}. Phone: ${cleanPhone}.`,
+          timestamp: new Date().toISOString(),
+          metadata: {
+            is_purchase_pending: true,
             ref_code: txClean,
             amount: selectedPlanDetails?.price,
             plan_name: selectedPlanDetails?.name,
-            phone: clientPhone
+            phone: cleanPhone
           }
         });
-      } catch (alertErr) {
-        console.error('Failed to notify alerts desk:', alertErr);
-      }
+      } catch (err) {}
 
-      setGeneratedKey(newLicenseKey);
-      setPurchaseStep('success');
+      setVerifyingStatus('Payment submitted! Awaiting David to confirm on his phone/email and Allow software launch. Do not close this browser.');
+
+      // Watch for license state changes to 'ACTIVE'
+      const channel = supabase
+        .channel(`license-approve-watch-${licenseId}`)
+        .on('postgres_changes', 
+          { 
+            event: 'UPDATE', 
+            schema: 'public', 
+            table: 'licenses',
+            filter: `id=eq.${licenseId}`
+          }, 
+          (payload) => {
+            if (payload.new && payload.new.status === 'ACTIVE') {
+              channel.unsubscribe();
+              finalizeActivation(payload.new.license_key);
+            }
+          }
+        )
+        .subscribe();
+
     } catch (e: any) {
-      console.error('M-Pesa validation error:', e);
-      setError('Verification failed: ' + (e.message || 'Intermittent database connection loss. Please try again.'));
+      console.error('Manual matching submission error:', e);
+      setError('Matching failed: ' + (e.message || 'Please check your SQL or credentials.'));
       setPurchaseStep('pay');
     }
   };
@@ -527,12 +715,27 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
                         </div>
                       )}
 
-                      <button 
-                        onClick={startMpesaVerification}
-                        className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg shadow-indigo-500/15 flex items-center justify-center gap-2"
-                      >
-                        <ShieldCheck className="w-4.5 h-4.5" /> Validate M-Pesa & Generate Key
-                      </button>
+                      <div className="space-y-3">
+                        <button 
+                          onClick={startMpesaVerification}
+                          className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg shadow-emerald-500/15 flex items-center justify-center gap-2 transition-all active:scale-95"
+                        >
+                          <Smartphone className="w-4 h-4 animate-bounce" /> Request STK PIN Prompt (STK Push)
+                        </button>
+
+                        <div className="flex items-center my-3">
+                          <div className="flex-grow border-t border-slate-800"></div>
+                          <span className="px-3 text-[9px] uppercase font-black text-slate-500 tracking-widest">or</span>
+                          <div className="flex-grow border-t border-slate-800"></div>
+                        </div>
+
+                        <button 
+                          onClick={handleManualSubmitForApproval}
+                          className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold uppercase text-[10px] tracking-wide shadow-md flex items-center justify-center gap-2 transition-all active:scale-95"
+                        >
+                          <ShieldCheck className="w-4 h-4" /> Paid manually? Submit Code for Approval
+                        </button>
+                      </div>
                     </div>
 
                     {/* Right Column - Instructions */}

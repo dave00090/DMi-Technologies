@@ -30,10 +30,11 @@ import { InstallPrompt } from './components/InstallPrompt';
 import { MasterAdmin } from './components/MasterAdmin';
 import { MasterLogin } from './components/MasterLogin';
 import { PenaltyScreen } from './components/PenaltyScreen';
+import { SubscriptionLockScreen } from './components/SubscriptionLockScreen';
 import { masterService, supabase } from './services/masterService';
 
 import { InvoicesTab } from './components/InvoicesTab';
-import { GuestPortal } from './components/GuestDesk';
+import { GuestDesk } from './components/GuestDesk';
 import { GuestPortal } from './components/GuestPortal';
 
 export default function App() {
@@ -64,6 +65,8 @@ export default function App() {
     setActiveTab('ledger');
   };
   const [unreadAlerts, setUnreadAlerts] = useState(0);
+  const [isSubscriptionExpired, setIsSubscriptionExpired] = useState(false);
+  const [licenseExpiryDate, setLicenseExpiryDate] = useState<string | null>(null);
 
   useEffect(() => {
     localDb.vacuum();
@@ -79,12 +82,25 @@ export default function App() {
         const domain = window.location.hostname;
         
         const result = await masterService.verifyLicense(licenseKey, fingerPrint, domain);
-        if (!result.success && (result.isLocked || result.securityBreach)) {
-          setIsSystemLocked(true);
-          // If explicitly revoked by server, we should also deactivate local trigger
-          if (result.message?.includes('Revoked') || result.message?.includes('Deleted')) {
-            await localDb.deactivate();
-            setIsActivated(false);
+        if (!result.success) {
+          if (result.isSubscriptionExpired) {
+            setIsSubscriptionExpired(true);
+            if (result.data && result.data.expires_at) {
+              setLicenseExpiryDate(result.data.expires_at);
+            }
+          } else if (result.isLocked || result.securityBreach) {
+            setIsSystemLocked(true);
+            // If explicitly revoked by server, we should also deactivate local trigger
+            if (result.message?.includes('Revoked') || result.message?.includes('Deleted')) {
+              await localDb.deactivate();
+              setIsActivated(false);
+            }
+          }
+        } else {
+          setIsSubscriptionExpired(false);
+          setIsSystemLocked(false);
+          if (result.data && result.data.expires_at) {
+            setLicenseExpiryDate(result.data.expires_at);
           }
         }
       }
@@ -119,10 +135,29 @@ export default function App() {
               setIsActivated(false);
             } else if (payload.eventType === 'UPDATE') {
               const newStatus = payload.new.status;
+              const expiresAt = payload.new.expires_at;
+
+              if (expiresAt) {
+                const expiry = new Date(expiresAt);
+                if (expiry > new Date()) {
+                  setIsSubscriptionExpired(false);
+                } else {
+                  setIsSubscriptionExpired(true);
+                  setLicenseExpiryDate(expiresAt);
+                }
+              } else {
+                setIsSubscriptionExpired(false);
+              }
+
               if (newStatus === 'LOCKED') {
                 setIsSystemLocked(true);
               } else if (newStatus === 'ACTIVE') {
                 setIsSystemLocked(false);
+                if (expiresAt && new Date(expiresAt) < new Date()) {
+                  setIsSubscriptionExpired(true);
+                } else {
+                  setIsSubscriptionExpired(false);
+                }
               }
             }
           }
@@ -276,6 +311,20 @@ export default function App() {
     return <PenaltyScreen />;
   }
 
+  if (isSubscriptionExpired) {
+    const licKey = localStorage.getItem('dmi_pos_license_key') || '';
+    return (
+      <SubscriptionLockScreen 
+        licenseKey={licKey} 
+        expiredDate={licenseExpiryDate}
+        onUnlocked={() => {
+          setIsSubscriptionExpired(false);
+          window.location.reload();
+        }}
+      />
+    );
+  }
+
   const renderContent = () => {
     if (!user || !activeBusinessId || !activeShopId) return null;
 
@@ -289,7 +338,7 @@ export default function App() {
       case 'invoices':
         return <InvoicesTab businessId={activeBusinessId} shopId={activeShopId} businessProfile={activeBusiness!} shopName={activeShop?.name || ''} />;
       case 'guest-requests':
-        return <GuestPortal businessId={activeBusinessId} shopId={activeShopId} user={user} />;
+        return <GuestDesk businessId={activeBusinessId} shopId={activeShopId} user={user} />;
       case 'customers':
         return user.role === 'hr' ? <HRM businessId={activeBusinessId} shopId={activeShopId} user={user} /> : <Customers user={user} businessId={activeBusinessId} onViewLedger={(id) => handleViewLedger(id, 'CUSTOMER')} />;
       case 'settings':

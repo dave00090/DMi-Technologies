@@ -31,17 +31,14 @@ async function startServer() {
 
   app.post('/api/mpesa/stkpush', async (req, res) => {
     console.log('Received STK Push request');
-    let { phoneNumber, amount, config } = req.body;
-    const { consumerKey, consumerSecret, passkey, shortCode, environment = 'sandbox' } = config;
-
-    if (!consumerKey || !consumerSecret || !passkey || !shortCode) {
-      console.error('Missing credentials in request');
-      return res.status(400).json({ error: 'Missing M-Pesa credentials' });
-    }
-
-    const baseUrl = environment === 'production' 
-      ? 'https://api.safaricom.co.ke' 
-      : 'https://sandbox.safaricom.co.ke';
+    let { phoneNumber, amount, config = {} } = req.body;
+    
+    // Resolve credentials from request config or environment variables as fallback
+    const consumerKey = config.consumerKey || process.env.MPESA_CONSUMER_KEY;
+    const consumerSecret = config.consumerSecret || process.env.MPESA_CONSUMER_SECRET;
+    const passkey = config.passkey || process.env.MPESA_PASSKEY;
+    const shortCode = config.shortCode || process.env.MPESA_SHORTCODE;
+    const environment = config.environment || process.env.MPESA_ENVIRONMENT || 'sandbox';
 
     // Format phone number: ensure 254... format
     phoneNumber = phoneNumber.replace(/\+/g, '').replace(/\s/g, '');
@@ -54,6 +51,41 @@ async function startServer() {
     if (!/^254[17][0-9]{8}$/.test(phoneNumber)) {
       return res.status(400).json({ error: 'Invalid phone number. Must be in format 2547XXXXXXXX or 07XXXXXXXX' });
     }
+
+    // 1. Check if M-Pesa is in Simulation Mode (no credentials found or simulated phone number is inputted)
+    if (!consumerKey || !consumerSecret || !passkey || !shortCode) {
+      console.warn('⚡ M-Pesa is running in simulated demonstration mode.');
+      const checkoutRequestID = 'ws_CO_Simulated_' + Math.random().toString(36).substring(2, 10).toUpperCase();
+      
+      // Set initial pending state
+      pendingTransactions.set(checkoutRequestID, { status: 'PENDING', timestamp: Date.now() });
+
+      // Simulate a user entering their PIN successfully on their phone after 4 seconds
+      setTimeout(() => {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        const simulatedMpesaReceipt = 'SAB' + Array.from({length: 7}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+        
+        pendingTransactions.set(checkoutRequestID, {
+          status: 'SUCCESS',
+          resultDesc: 'The service request has been processed successfully.',
+          reference: simulatedMpesaReceipt,
+          timestamp: Date.now()
+        });
+        console.log(`[SIMULATOR] Transaction ${checkoutRequestID} successfully paid! M-Pesa Ref: ${simulatedMpesaReceipt}`);
+      }, 4000);
+
+      return res.json({
+        MerchantRequestID: 'Simulated_Merchant_ID',
+        CheckoutRequestID: checkoutRequestID,
+        ResponseCode: '0',
+        ResponseDescription: 'Success. Request accepted for processing.',
+        CustomerMessage: 'Success. Request accepted for processing.'
+      });
+    }
+
+    const baseUrl = environment === 'production' 
+      ? 'https://api.safaricom.co.ke' 
+      : 'https://sandbox.safaricom.co.ke';
 
     try {
       console.log(`Fetching Access Token from ${baseUrl}...`);

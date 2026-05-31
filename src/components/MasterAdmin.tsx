@@ -20,7 +20,10 @@ import {
   Layers,
   Lightbulb,
   Target,
-  FileText
+  FileText,
+  Smartphone,
+  CheckCircle,
+  ShieldCheck
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { format } from 'date-fns';
@@ -324,6 +327,64 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
     if (!error) fetchData();
   };
 
+  const handleApproveMpesa = async (license: any) => {
+    const confirm = window.confirm(`Approve client activation for ${license.client_name}? This will grant access and register billing.`);
+    if (!confirm) return;
+
+    // Check if subscription or one-off
+    const isOneOff = license.plan_type?.toLowerCase().includes('one-off') || Number(license.license_fee) > 10000;
+    
+    // Set 30 days expiry if subscription, otherwise null
+    const expiresAt = isOneOff 
+      ? null 
+      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    try {
+      const { error } = await supabase
+        .from('licenses')
+        .update({
+          status: 'ACTIVE',
+          payment_status: 'PAID',
+          expires_at: expiresAt
+        })
+        .eq('id', license.id);
+
+      if (error) {
+        alert('Approval failed: ' + error.message);
+      } else {
+        // Record payment sale transaction
+        try {
+          await supabase.from('sales').insert({
+            id: crypto.randomUUID(),
+            total: Number(license.license_fee),
+            items: [{ name: `M-Pesa License Dev-Approval: ${license.plan_type || 'Classic'}`, quantity: 1, price: Number(license.license_fee) }],
+            cashier_id: 'MASTER_ADMIN',
+            cashier_name: 'David Migichi',
+            client_name: license.client_name,
+            payment_method: 'MPESA',
+            mpesa_reference: license.mpesa_reference || 'MANUAL_ALLOW',
+            timestamp: new Date().toISOString()
+          });
+        } catch (se) {}
+
+        // Add notice to alerts
+        try {
+          await supabase.from('piracy_alerts').insert({
+            id: crypto.randomUUID(),
+            license_id: license.id,
+            message: `🟢 APPROVED MANUALLY: David approved KES ${Number(license.license_fee).toLocaleString()} for ${license.client_name}. App is live!`,
+            timestamp: new Date().toISOString()
+          });
+        } catch (ae) {}
+
+        alert('SUCCESS: Client unlocked instantly! They are now live on the network.');
+        fetchData();
+      }
+    } catch (e: any) {
+      alert('Error updating row: ' + e.message);
+    }
+  };
+
   const handleResetPin = async (clientName: string) => {
     const confirm = window.confirm(`Generate a one-time master bypass PIN for ${clientName}?`);
     if (confirm) {
@@ -552,12 +613,79 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                 </div>
               </div>
 
+              {/* M-Pesa Pending Approvals Queue */}
+              {licenses.filter(l => l.status === 'PENDING').length > 0 && (
+                <div className="p-6 bg-slate-900/80 border-b border-slate-800">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-2 h-2 bg-amber-500 rounded-full animate-ping" />
+                    <h4 className="text-xs font-black uppercase text-amber-500 tracking-wider">Awaiting M-Pesa Client Activation Approvals</h4>
+                    <span className="px-2 py-0.5 bg-amber-500/10 text-amber-500 text-[9px] font-black rounded">
+                      {licenses.filter(l => l.status === 'PENDING').length} PENDING UNLOCK
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {licenses.filter(l => l.status === 'PENDING').map(pending => (
+                      <div key={pending.id} className="p-4 bg-slate-950 border border-slate-850 rounded-2xl flex flex-col justify-between gap-3 text-xs">
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-extrabold text-white text-sm">{pending.client_name}</span>
+                            <span className="px-2 py-0.5 bg-indigo-500/10 text-indigo-400 text-[9px] font-bold rounded uppercase">
+                              {pending.plan_type || 'Custom Plan'}
+                            </span>
+                          </div>
+                          <div className="text-slate-400">
+                            Device Terminal Type: <strong className="text-slate-300">{pending.system_name}</strong>
+                          </div>
+                          {pending.payment_phone && (
+                            <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                              <Smartphone className="w-3.5 h-3.5 text-indigo-400" />
+                              Phone: <span className="font-mono font-bold text-slate-300">+{pending.payment_phone}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-4 bg-slate-900/60 p-2.5 border border-slate-800 rounded-xl mt-1">
+                            <div>
+                              <span className="text-[9px] uppercase font-black text-slate-500 block">Pricing</span>
+                              <span className="font-extrabold text-emerald-400 font-mono">KES {Number(pending.license_fee || 0).toLocaleString()}</span>
+                            </div>
+                            <div className="border-l border-slate-800 pl-4">
+                              <span className="text-[9px] uppercase font-black text-slate-500 block">Entered Receipt Ref</span>
+                              <span className="font-mono font-black text-indigo-400 uppercase tracking-widest">{pending.mpesa_reference || 'STK_AUTO_WAIT'}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 border-t border-slate-900 pt-3">
+                          <button 
+                            onClick={() => handleApproveMpesa(pending)}
+                            className="flex-grow py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold uppercase text-[10px] tracking-widest flex items-center justify-center gap-1.5 transition-colors"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5 animate-bounce" /> Confirm & Allow
+                          </button>
+                          <button 
+                            onClick={async () => {
+                              const confirmDecline = window.confirm(`Decline and revoke order for ${pending.client_name}?`);
+                              if (confirmDecline) {
+                                await supabase.from('licenses').delete().eq('id', pending.id);
+                                fetchData();
+                              }
+                            }}
+                            className="px-4 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-400 rounded-xl font-semibold uppercase text-[10px] tracking-wide"
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
                   <thead>
                     <tr className="bg-slate-950/50 text-[10px] uppercase font-black tracking-widest text-slate-500">
                       <th className="px-6 py-4">Client / System</th>
                       <th className="px-6 py-4">License Key</th>
+                      <th className="px-6 py-4">License Plan & Expiry</th>
                       <th className="px-6 py-4">Hardware ID</th>
                       <th className="px-6 py-4">Last Sync</th>
                       <th className="px-6 py-4">Fee (KES)</th>
@@ -579,6 +707,20 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                           </td>
                           <td className="px-6 py-4">
                             <code className="bg-slate-950 px-2 py-1 rounded-lg text-xs text-indigo-400 border border-slate-800">{license.license_key}</code>
+                          </td>
+                          <td className="px-6 py-4 text-xs">
+                            <div className="font-bold text-indigo-400">{license.plan_type || 'Classic License'}</div>
+                            <div className="text-[10px] text-slate-400 mt-0.5">
+                              {license.expires_at ? (
+                                new Date(license.expires_at) < new Date() ? (
+                                  <span className="text-red-400 font-bold">Expired: {format(new Date(license.expires_at), 'MMM dd, yyyy')}</span>
+                                ) : (
+                                  <span className="text-emerald-400 font-bold">Expires: {format(new Date(license.expires_at), 'MMM dd, yyyy')}</span>
+                                )
+                              ) : (
+                                <span className="text-slate-500 italic">One-Off / Infinite</span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-6 py-4 text-xs font-mono text-slate-400">{license.machine_id?.slice(0, 12) || '---'}</td>
                           <td className="px-6 py-4 text-xs text-slate-400">
