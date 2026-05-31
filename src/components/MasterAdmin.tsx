@@ -14,7 +14,13 @@ import {
   AlertTriangle,
   RefreshCcw,
   Store,
-  Database
+  Database,
+  Award,
+  BookOpen,
+  Layers,
+  Lightbulb,
+  Target,
+  FileText
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { format } from 'date-fns';
@@ -36,9 +42,15 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
     onlineStaff: 0
   });
   const [isLoading, setIsLoading] = useState(true);
-  const [view, setView] = useState<'dashboard' | 'licenses' | 'security'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'licenses' | 'security' | 'pricing'>('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   const [networkStatus, setNetworkStatus] = useState<'online' | 'offline'>('online');
+
+  // Pricing & Commercial Strategy States
+  const [saasClients, setSaasClients] = useState(5);
+  const [oneOffClients, setOneOffClients] = useState(2);
+  const [hotelClients, setHotelClients] = useState(3);
+  const [selectedPitch, setSelectedPitch] = useState<'retail' | 'hardware' | 'hotel'>('retail');
 
   useEffect(() => {
     fetchData();
@@ -374,6 +386,14 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
           >
             <ShieldAlert className="w-4 h-4" />
             Anti-Piracy
+          </button>
+          <button 
+            onClick={() => setView('pricing')}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${view === 'pricing' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}
+            id="pricing-tab-btn"
+          >
+            <DollarSign className="w-4 h-4" />
+            Pricing & Marketing
           </button>
         </nav>
 
@@ -838,6 +858,452 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                   </button>
                 </div>
               </motion.div>
+            </div>
+          )}
+
+          {view === 'pricing' && (
+            <div className="space-y-8">
+              {/* Header */}
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-slate-900 border border-slate-800 rounded-3xl p-8"
+              >
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 bg-indigo-500/20 rounded-2xl flex items-center justify-center">
+                    <Award className="w-6 h-6 text-indigo-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-black uppercase tracking-tight">Commercialization & Pricing Strategy</h2>
+                    <p className="text-sm text-slate-400">Specially optimized pricing models and B2B marketing playbooks for the East African SME sector.</p>
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* Pricing Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* tier 1 */}
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  whileHover={{ y: -4 }}
+                  className="bg-slate-900 border border-slate-800 rounded-3xl p-6 relative overflow-hidden flex flex-col justify-between"
+                >
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-bl-full" />
+                  <div>
+                    <span className="px-3 py-1 bg-indigo-500/10 text-indigo-400 text-[10px] font-black uppercase tracking-widest rounded-lg">Subscription Mode</span>
+                    <h3 className="text-xl font-black my-3 uppercase tracking-tight">SaaS Subscription</h3>
+                    <p className="text-slate-400 text-[11px] mb-4">Best for retail stores, cosmetic boutiques, chemists, salons, and medium wholesales.</p>
+                    <div className="space-y-1 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/80 mb-6">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Recommended Monthly Rate</span>
+                      <span className="text-2xl font-black text-indigo-400">KES 2,500 - 4,000</span>
+                      <span className="text-[9px] text-slate-500 block">Per active terminal & database</span>
+                    </div>
+                    <ul className="space-y-2.5 text-xs text-slate-300">
+                      <li className="flex items-start gap-2">
+                        <span className="text-indigo-400 font-bold">✓</span>
+                        <span><b>Live Cloud Sync</b>: Syncs offline db to central Supabase server</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-indigo-400 font-bold">✓</span>
+                        <span><b>Owner Tracking</b>: Remote stats viewable on active mobile/Web browsers</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-indigo-400 font-bold">✓</span>
+                        <span><b>Live Inventory Alerts</b>: WhatsApp/App logs of declining stock levels</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-indigo-400 font-bold">✓</span>
+                        <span><b>No Setup Headache</b>: Automatic software upgrades remotely</span>
+                      </li>
+                    </ul>
+                  </div>
+                </motion.div>
+
+                {/* tier 2 */}
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.1 }}
+                  whileHover={{ y: -4 }}
+                  className="bg-slate-900 border border-slate-800 rounded-3xl p-6 relative overflow-hidden flex flex-col justify-between border-l-4 border-l-amber-500"
+                >
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-bl-full" />
+                  <div>
+                    <span className="px-3 py-1 bg-amber-500/10 text-amber-500 text-[10px] font-black uppercase tracking-widest rounded-lg">Local-First</span>
+                    <h3 className="text-xl font-black my-3 uppercase tracking-tight">One-Off License</h3>
+                    <p className="text-slate-400 text-[11px] mb-4">Best for hardware hubs, wholesale yards in remote townships, or standalone bakeries.</p>
+                    <div className="space-y-1 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/80 mb-6">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Single Machine Upfront Fee</span>
+                      <span className="text-2xl font-black text-amber-500 font-sans">KES 35,000 - 55,000</span>
+                      <span className="text-[9px] text-slate-500 block">One-off license generation</span>
+                    </div>
+                    <ul className="space-y-2.5 text-xs text-slate-300">
+                      <li className="flex items-start gap-2">
+                        <span className="text-amber-500 font-bold">✓</span>
+                        <span><b>True Offline Work</b>: Operations function completely blind of the web</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-amber-500 font-bold">✓</span>
+                        <span><b>Physical PC Mapping</b>: Installed directly onto local Windows/Linux PC</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-amber-500 font-bold">✓</span>
+                        <span><b>Hardware Customization</b>: Direct mapping of thermal receipt printers & cash drawer triggers</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-amber-500 font-bold">✓</span>
+                        <span><b>Support Cover</b>: 1 year included local troubleshooting & repairs</span>
+                      </li>
+                    </ul>
+                  </div>
+                </motion.div>
+
+                {/* tier 3 */}
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.2 }}
+                  whileHover={{ y: -4 }}
+                  className="bg-slate-900 border border-slate-800 rounded-3xl p-6 relative overflow-hidden flex flex-col justify-between border-l-4 border-l-indigo-600"
+                >
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-600/5 rounded-bl-full" />
+                  <div>
+                    <span className="px-3 py-1 bg-indigo-600/10 text-indigo-400 text-[10px] font-black uppercase tracking-widest rounded-lg">Hospitality Premium</span>
+                    <h3 className="text-xl font-black my-3 uppercase tracking-tight">Hotel & Lodge Package</h3>
+                    <p className="text-slate-400 text-[11px] mb-4">Best for boutique hotels, lodge pubs, countryside Airbnb managers, motels, and resorts.</p>
+                    <div className="space-y-1 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/80 mb-6">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Dual Licensing Model</span>
+                      <span className="text-xl font-black text-indigo-400">KES 5,000 - 8,000 / mo</span>
+                      <span className="text-[10px] text-slate-500 block">or <b className="text-indigo-300">KES 80,000</b> standalone</span>
+                    </div>
+                    <ul className="space-y-2.5 text-xs text-slate-300">
+                      <li className="flex items-start gap-2">
+                        <span className="text-indigo-400 font-bold">✓</span>
+                        <span><b>Full POS Engine</b>: Integrated bar/kitchen inventory tracking & supplier logs</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-indigo-400 font-bold">✓</span>
+                        <span><b>Guest Desk</b>: Central guest lodge controller with automated receipts</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-indigo-400 font-bold">✓</span>
+                        <span><b>Guest QR Portal</b>: Client-facing mobile interface for rooms, menus, & bills</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-indigo-400 font-bold">✓</span>
+                        <span><b>Hybrid Database</b>: Backed by local persistent states & live cloud backup</span>
+                      </li>
+                    </ul>
+                  </div>
+                </motion.div>
+              </div>
+
+              {/* Projections & Calculator */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Calculator Panel */}
+                <motion.div 
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="bg-slate-900 border border-slate-800 rounded-3xl p-8 lg:col-span-2 space-y-6"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-indigo-600/20 rounded-xl flex items-center justify-center">
+                      <TrendingUp className="w-5 h-5 text-indigo-400" />
+                    </div>
+                    <h3 className="text-xl font-black uppercase tracking-tight">Income Projection Simulator</h3>
+                  </div>
+                  
+                  <p className="text-slate-400 text-xs">Simulate your client base in Kenya to calculate potential monthly recurring revenue (MRR) and active setup capital.</p>
+
+                  <div className="space-y-6">
+                    {/* SaaS Sliders */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-bold text-slate-300 flex items-center gap-2"><Layers className="w-3.5 h-3.5 text-indigo-400" /> SaaS Subscribers (KES 3,000/mo mid)</span>
+                        <span className="font-mono bg-slate-950 px-2 py-1 rounded border border-slate-800 font-bold text-indigo-400">{saasClients} Clients</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0" 
+                        max="50" 
+                        value={saasClients} 
+                        onChange={(e) => setSaasClients(Number(e.target.value))}
+                        className="w-full accent-indigo-500 bg-slate-950 h-2 rounded-lg cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Local-First Sliders */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-bold text-slate-300 flex items-center gap-2"><Key className="w-3.5 h-3.5 text-amber-500" /> One-off Setup Clients (KES 45,000 mid)</span>
+                        <span className="font-mono bg-slate-950 px-2 py-1 rounded border border-slate-800 font-bold text-amber-500">{oneOffClients} Clients / Yr</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0" 
+                        max="20" 
+                        value={oneOffClients} 
+                        onChange={(e) => setOneOffClients(Number(e.target.value))}
+                        className="w-full accent-amber-500 bg-slate-950 h-2 rounded-lg cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Hotel Sliders */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-bold text-slate-300 flex items-center gap-2"><Store className="w-3.5 h-3.5 text-indigo-400" /> Hotel Package (Recurring KES 6,500/mo mid)</span>
+                        <span className="font-mono bg-slate-950 px-2 py-1 rounded border border-slate-800 font-bold text-indigo-400">{hotelClients} Clients</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0" 
+                        max="15" 
+                        value={hotelClients} 
+                        onChange={(e) => setHotelClients(Number(e.target.value))}
+                        className="w-full accent-indigo-500 bg-slate-950 h-2 rounded-lg cursor-pointer"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Profit projections display */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-6 border-t border-slate-800/50">
+                    <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                      <p className="text-[9px] font-black uppercase text-slate-500 tracking-widest mb-1">Monthly Recurring Income (MRR)</p>
+                      <h4 className="text-2xl font-black text-emerald-400 font-mono">
+                        {formatCurrency(saasClients * 3000 + hotelClients * 6500)}
+                      </h4>
+                      <p className="text-[9px] text-slate-600 mt-1">SaaS Subscribers + Premium active accounts</p>
+                    </div>
+
+                    <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                      <p className="text-[9px] font-black uppercase text-slate-500 tracking-widest mb-1">Total Expected Yearly earnings</p>
+                      <h4 className="text-2xl font-black text-white font-mono">
+                        {formatCurrency((saasClients * 3000 + hotelClients * 6500) * 12 + (oneOffClients * 45000))}
+                      </h4>
+                      <p className="text-[9px] text-emerald-400 mt-1">Includes one-off hardware installation setup fees</p>
+                    </div>
+                  </div>
+                </motion.div>
+
+                {/* Target progress meter */}
+                <motion.div 
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="bg-slate-900 border border-slate-800 rounded-3xl p-8 flex flex-col justify-between"
+                >
+                  <div className="space-y-4">
+                    <h4 className="text-md font-black uppercase tracking-tight">Milestone Goal (KES 150K/mo)</h4>
+                    <p className="text-xs text-slate-400">Achieving 150,000 KES in Monthly Recurring Revenue grants massive business stability to DMi Technologies.</p>
+                    
+                    {(() => {
+                      const mrrValue = (saasClients * 3000) + (hotelClients * 6500);
+                      const percent = Math.min(100, Math.round((mrrValue / 150000) * 100));
+                      return (
+                        <div className="space-y-2 pt-4">
+                          <div className="flex justify-between text-xs font-bold">
+                            <span className="text-slate-400">Goal Progress</span>
+                            <span className="text-indigo-400">{percent}%</span>
+                          </div>
+                          <div className="w-full bg-slate-950 rounded-full h-3 border border-slate-800 p-0.5">
+                            <div 
+                              className="bg-gradient-to-r from-indigo-500 to-emerald-500 h-full rounded-full transition-all duration-500" 
+                              style={{ width: `${percent}%` }}
+                            />
+                          </div>
+                          <span className="text-[9px] text-slate-500 block uppercase tracking-wider">MRR Current: {formatCurrency(mrrValue)} / KES 150,000</span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800 space-y-2 mt-6">
+                    <h5 className="text-xs font-bold text-slate-300 uppercase flex items-center gap-1.5">
+                      <Lightbulb className="w-3.5 h-3.5 text-yellow-500" /> Capital Optimization
+                    </h5>
+                    <p className="text-[10px] text-slate-400 leading-relaxed">
+                      SaaS subscription values can cover cloud hosting costs (Supabase databases & background analytics) while custom offline licenses fund physical developer machinery.
+                    </p>
+                  </div>
+                </motion.div>
+              </div>
+
+              {/* Modern Marketing Playbook */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Playbook Sidebar Menu */}
+                <div className="space-y-3 lg:col-span-1">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 pl-2">Market Action Scenarios</h4>
+                  
+                  <button 
+                    onClick={() => setSelectedPitch('retail')}
+                    className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center gap-3 ${
+                      selectedPitch === 'retail' 
+                        ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/15' 
+                        : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+                      <Layers className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h5 className="font-black uppercase tracking-tight text-xs">Mini-Supermarket / Chemist</h5>
+                      <p className="text-[9px] opacity-70">Focuses on inventory leak reduction & audit metrics.</p>
+                    </div>
+                  </button>
+
+                  <button 
+                    onClick={() => setSelectedPitch('hardware')}
+                    className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center gap-3 ${
+                      selectedPitch === 'hardware' 
+                        ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/15' 
+                        : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+                      <Key className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h5 className="font-black uppercase tracking-tight text-xs">Hardware Store / Wholesale</h5>
+                      <p className="text-[9px] opacity-70">Emphasizes robust offline access & bulletproof receipts.</p>
+                    </div>
+                  </button>
+
+                  <button 
+                    onClick={() => setSelectedPitch('hotel')}
+                    className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center gap-3 ${
+                      selectedPitch === 'hotel' 
+                        ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/15' 
+                        : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+                      <Store className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h5 className="font-black uppercase tracking-tight text-xs">Avenue Hotel / Lodges</h5>
+                      <p className="text-[9px] opacity-70">Pitches remote tracking & direct mobile guest desk.</p>
+                    </div>
+                  </button>
+
+                  <div className="p-5 bg-slate-900/60 rounded-3xl border border-slate-800/70 text-slate-400 space-y-2.5">
+                    <span className="text-[9px] font-black uppercase text-amber-500 tracking-widest block">Golden Rule</span>
+                    <p className="text-[10px] leading-relaxed">
+                      "Marketing B2B software is won on trust, reliability, and touchable returns. Never pitch features; sell the exact leakage numbers you will save them."
+                    </p>
+                  </div>
+                </div>
+
+                {/* Scenario Details */}
+                <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-3xl p-8 space-y-6">
+                  <div className="flex items-center gap-2 text-indigo-400 pb-4 border-b border-slate-800/50">
+                    <BookOpen className="w-5 h-5" />
+                    <h4 className="text-lg font-black uppercase tracking-tight">Interactive Pitch Script Playbook</h4>
+                  </div>
+
+                  {selectedPitch === 'retail' && (
+                    <div className="space-y-6">
+                      <div className="space-y-2">
+                        <span className="px-2.5 py-1 bg-indigo-500/10 text-indigo-400 text-[10px] font-bold uppercase tracking-wide rounded-lg">Scenario: The 7-Day Zero-Down Trial</span>
+                        <h4 className="text-xl font-bold text-white">How to Sell Retail Chemist & Minimarket Stocks</h4>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          Kemis chemist or boutique stores lose an average of KES 5,000 to KES 15,000 per month due to undeclared cashier sales and silent stock differences. Here is your pitch mapping:
+                        </p>
+                      </div>
+
+                      <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 border-l-4 border-l-indigo-500">
+                        <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-2">The Opening Pitch Statement</p>
+                        <blockquote className="text-sm italic font-medium text-slate-200 pl-4 border-l border-slate-800">
+                          "Habari boss. Your business processes 100+ items daily, but how close are you tracking staff leaks or shelf stock levels when you are away? I will set up the DMi System on your PC for exactly <b>7 days free</b>. I'll load 20 of your top-selling products. Keep operating, and on day 7, I will print a stock difference report. If I don't prove exactly which margins you are losing, I will uninstall it for free. No cards, no commitments."
+                        </blockquote>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                        <div className="p-4 bg-slate-950/50 rounded-xl border border-slate-800/80">
+                          <h5 className="font-bold text-emerald-400 uppercase tracking-widest text-[10px] mb-1">Psychological Trap</h5>
+                          <p className="text-slate-400 leading-relaxed">When they see inventory discrepancies in real time, they will NOT let you take the system away. Giving up their daily profit reports feels like flying blind again.</p>
+                        </div>
+                        <div className="p-4 bg-slate-950/50 rounded-xl border border-slate-800/80">
+                          <h5 className="font-bold text-indigo-400 uppercase tracking-widest text-[10px] mb-1">Closing & Onboarding</h5>
+                          <p className="text-slate-400 leading-relaxed">Offer the KES 3,000/mo Cloud Sync subscription. Emphasize that they can tracking daily earnings on their mobile phones remotely via their personal dashboard.</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedPitch === 'hardware' && (
+                    <div className="space-y-6">
+                      <div className="space-y-2">
+                        <span className="px-2.5 py-1 bg-amber-500/10 text-amber-500 text-[10px] font-bold uppercase tracking-wide rounded-lg">Scenario: Standalone Premium Installation</span>
+                        <h4 className="text-xl font-bold text-white">Pitching Hardware Yards in Township Centers</h4>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          Hardware depots process heavy cement packages, iron bars, and paint tins. They demand lightning-fast offline printing, robust POS controls, and hate recurring costs.
+                        </p>
+                      </div>
+
+                      <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 border-l-4 border-l-amber-500">
+                        <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-2">The Setup Pitch Statement</p>
+                        <blockquote className="text-sm italic font-medium text-slate-200 pl-4 border-l border-slate-800">
+                          "Habari, I have a standalone POS build customized for cement, bars, and pipe inventories. It does not require internet, so even during blackouts your cashier keeps making sales and printing invoices. This is a one-off premium system: KES 45,000 total. I'll configure your legacy EPSON printer, set up your machine license, and cover support for an entire year. You own the software forever."
+                        </blockquote>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                        <div className="p-4 bg-slate-950/50 rounded-xl border border-slate-800/80">
+                          <h5 className="font-bold text-amber-500 uppercase tracking-widest text-[10px] mb-1">Key Selling Benefit</h5>
+                          <p className="text-slate-400 leading-relaxed">Zero reliance on high cost bundles / safaricom internet drops. Hardware inventories are heavy and capital is stationary; local-first is incredibly stable.</p>
+                        </div>
+                        <div className="p-4 bg-slate-950/50 rounded-xl border border-slate-800/80">
+                          <h5 className="font-bold text-indigo-400 uppercase tracking-widest text-[10px] mb-1">Installation Bundle</h5>
+                          <p className="text-slate-400 leading-relaxed">Double down on value by packing a thermal printer + 5 paper rolls with the bundle. It costs you KES 7,000 locally, but secures a high-trust KES 45,000 deal instantly.</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedPitch === 'hotel' && (
+                    <div className="space-y-6">
+                      <div className="space-y-2">
+                        <span className="px-2.5 py-1 bg-indigo-500/10 text-indigo-400 text-[10px] font-bold uppercase tracking-wide rounded-lg">Scenario: Hospitality Premium (Guest Desk)</span>
+                        <h4 className="text-xl font-bold text-white">Deploying Lodges, Resorts & Airbnb Hubs</h4>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          Lodges operate dual inventory (bar POS drinks & active guest rooms/check-ins) and require active customer bills matching check-in statuses.
+                        </p>
+                      </div>
+
+                      <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 border-l-4 border-l-indigo-500">
+                        <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-2">The Direct Hotel Pitch</p>
+                        <blockquote className="text-sm italic font-medium text-slate-200 pl-4 border-l border-slate-800">
+                          "Greetings manager. Your lodgers have to ask reception or call wait staff every time they want to verify active room bills, order food, or request local support. With DMi, guests can scan a custom QR code in their room. They check their current tab, request towels/drinks, and make M-Pesa requests directly. On the counter, your receptionist tracks checkout state on a central dashboard. Includes bar POS. KES 6,500 monthly."
+                        </blockquote>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                        <div className="p-4 bg-slate-950/50 rounded-xl border border-slate-800/80">
+                          <h5 className="font-bold text-indigo-400 uppercase tracking-widest text-[10px] mb-1">The Guest Portal Edge</h5>
+                          <p className="text-slate-400 leading-relaxed">Includes Guest Desk and guest-facing Guest Portal. Guests scan QR, check tabs, make requests, reducing front-desk friction and increasing food orders.</p>
+                        </div>
+                        <div className="p-4 bg-slate-950/50 rounded-xl border border-slate-800/80">
+                          <h5 className="font-bold text-emerald-400 uppercase tracking-widest text-[10px] mb-1">Easy Multi-Room Upsell</h5>
+                          <p className="text-slate-400 leading-relaxed">Offer them 3 months free trial, print 10 room-cards with the custom URL/QR. Managers love tech updates that make lodge guests feel elite and cared for.</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Business Checklist */}
+                  <div className="pt-6 border-t border-slate-800/60 flex items-center justify-between text-xs font-bold text-slate-500">
+                    <span className="flex items-center gap-1.5"><Target className="w-4 h-4 text-emerald-500" /> B2B conversion cycle takes 3 to 7 days.</span>
+                    <button 
+                      onClick={() => {
+                        window.print();
+                      }}
+                      className="text-[10px] font-black uppercase text-indigo-400 hover:underline flex items-center gap-1.5"
+                    >
+                      <FileText className="w-3.5 h-3.5" /> Export strategy worksheet
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
