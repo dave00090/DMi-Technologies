@@ -27,7 +27,8 @@ import {
   Mail,
   Share2,
   Wifi,
-  Battery
+  Battery,
+  X
 } from 'lucide-react';
 
 interface GuestDeskProps {
@@ -44,6 +45,8 @@ export const GuestDeskPanel: React.FC<GuestDeskProps> = ({
   const [requests, setRequests] = useState<GuestRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeSubTab, setActiveSubTab] = useState<'INBOX' | 'SIMULATOR'>('INBOX');
+  const [notifications, setNotifications] = useState<{ id: string; message: string; type: 'success' | 'info' | 'warning' }[]>([]);
+  const requestsRef = React.useRef<GuestRequest[]>([]);
   
   // Dashboard Filters
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'REPAIR' | 'FEEDBACK' | 'HOUSEKEEPING'>('ALL');
@@ -69,6 +72,25 @@ export const GuestDeskPanel: React.FC<GuestDeskProps> = ({
   const fetchRequests = async (isSilent = false) => {
     if (!isSilent) setLoading(true);
     const data = await localDb.getGuestRequests(businessId, shopId);
+    
+    // Detect new requests for live notification trigger
+    if (requestsRef.current.length > 0) {
+      const existingIds = new Set(requestsRef.current.map(r => r.id));
+      const newItems = data.filter(r => !existingIds.has(r.id));
+      
+      if (newItems.length > 0) {
+        newItems.forEach(item => {
+          const typeLabel = item.type === 'REPAIR' ? 'Repair' : item.type === 'FEEDBACK' ? 'Feedback' : 'Housekeeping';
+          const msg = `New Live ${typeLabel} request from Guest ${item.guestName} (${item.roomNo}): "${item.title}"`;
+          setNotifications(prev => [
+            ...prev,
+            { id: crypto.randomUUID(), message: msg, type: item.type === 'REPAIR' ? 'warning' : item.type === 'FEEDBACK' ? 'success' : 'info' }
+          ]);
+        });
+      }
+    }
+    
+    requestsRef.current = data;
     setRequests(data);
     if (!isSilent) setLoading(false);
   };
@@ -76,78 +98,48 @@ export const GuestDeskPanel: React.FC<GuestDeskProps> = ({
   useEffect(() => {
     fetchRequests();
     
-    // Seed sample initial mock data to look outstanding right away!
-    const seedInitialData = async () => {
-      const existing = await localDb.getGuestRequests(businessId, shopId);
-      if (existing.length === 0) {
-        const samples: Omit<GuestRequest, 'id'>[] = [
-          {
-            businessId,
-            shopId,
-            roomNo: 'Apt 2B',
-            guestName: 'Richard Hendrick',
-            type: 'REPAIR',
-            title: 'Living Room Wi-Fi weak connection',
-            description: 'The Wi-Fi drops signals frequently in the master bedroom and living room area. Kindly check the router position.',
-            priority: 'HIGH',
-            status: 'PENDING',
-            createdAt: new Date(Date.now() - 3600000 * 4).toISOString()
-          },
-          {
-            businessId,
-            shopId,
-            roomNo: 'Apt 5',
-            guestName: 'Sarah Connor',
-            type: 'REPAIR',
-            title: 'Shower leaking warm water',
-            description: 'The thermostat valve under the shower has a minute leakage. We are losing water pressure in the morning.',
-            priority: 'MEDIUM',
-            status: 'IN_PROGRESS',
-            createdAt: new Date(Date.now() - 3600000 * 18).toISOString()
-          },
-          {
-            businessId,
-            shopId,
-            roomNo: 'Penthouse 101',
-            guestName: 'Elon Mars',
-            type: 'FEEDBACK',
-            title: 'Spectacular stay and view',
-            description: 'Amazing view and interior details! The automated balcony shades work like a charm. 10/10 stay.',
-            rating: 5,
-            priority: 'LOW',
-            status: 'RESOLVED',
-            createdAt: new Date(Date.now() - 3600000 * 24).toISOString()
-          },
-          {
-            businessId,
-            shopId,
-            roomNo: 'Apt 4A',
-            guestName: 'Clara Oswald',
-            type: 'HOUSEKEEPING',
-            title: 'Fresh bedsheets and towels needed',
-            description: 'Requesting a quick towel swap and complementary coffee pod replenishment details today.',
-            priority: 'LOW',
-            status: 'RESOLVED',
-            createdAt: new Date(Date.now() - 3600000 * 48).toISOString()
-          }
-        ];
-        
-        for (const sample of samples) {
-          await localDb.addGuestRequest(sample);
+    // Clean out previous seeded/hardcoded samples to keep the desk 100% live and pure
+    const cleanSamples = async () => {
+      const data = await localDb.getGuestRequests(businessId, shopId);
+      const hardcodedNames = ['Richard Hendrick', 'Sarah Connor', 'Elon Mars', 'Clara Oswald'];
+      for (const item of data) {
+        if (hardcodedNames.includes(item.guestName)) {
+          await localDb.deleteGuestRequest(item.id);
         }
-        fetchRequests();
       }
+      fetchRequests();
     };
     
-    seedInitialData();
+    cleanSamples();
 
-    // Live sync polling interval: checks live database every 4 seconds to sync client devices
+    // Constant live sync interval
     const syncInterval = setInterval(() => {
       fetchRequests(true);
     }, 4000);
 
-    return () => clearInterval(syncInterval);
+    const handleDataUpdate = (e: any) => {
+      if (e.detail?.key === 'dmi_pos_guest_requests') {
+        fetchRequests(true);
+      }
+    };
+    window.addEventListener('local-db-update', handleDataUpdate);
+    window.addEventListener('storage-sync', handleDataUpdate);
+
+    return () => {
+      clearInterval(syncInterval);
+      window.removeEventListener('local-db-update', handleDataUpdate);
+      window.removeEventListener('storage-sync', handleDataUpdate);
+    };
   }, [businessId, shopId]);
+
+  useEffect(() => {
+    if (notifications.length > 0) {
+      const timer = setTimeout(() => {
+        setNotifications(prev => prev.slice(1));
+      }, 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [notifications]);
 
   const handleUpdateStatus = async (id: string, newStatus: GuestRequest['status']) => {
     await localDb.updateGuestRequestStatus(id, newStatus);
@@ -820,6 +812,34 @@ export const GuestDeskPanel: React.FC<GuestDeskProps> = ({
           </div>
         </div>
       )}
+
+      {/* Floating Notifications Toasts */}
+      <div className="fixed top-6 right-6 z-[9999] space-y-3 max-w-sm w-full pointer-events-none">
+        {notifications.map(notif => (
+          <div 
+            key={notif.id}
+            style={{ contentVisibility: 'auto' }}
+            className={`pointer-events-auto p-4 rounded-2xl shadow-xl border flex items-start gap-3 backdrop-blur-md transition-all transform hover:scale-[1.01] ${
+              notif.type === 'warning' 
+                ? 'bg-amber-600/90 text-white border-amber-500/20' 
+                : notif.type === 'success'
+                ? 'bg-emerald-600/90 text-white border-emerald-500/20'
+                : 'bg-indigo-600/90 text-white border-indigo-500/20'
+            }`}
+          >
+            <div className="flex-1">
+              <p className="text-xs font-black uppercase tracking-wider mb-0.5 opacity-80">System Notification</p>
+              <p className="text-xs font-bold leading-relaxed">{notif.message}</p>
+            </div>
+            <button 
+              onClick={() => setNotifications(prev => prev.filter(n => n.id !== notif.id))}
+              className="text-white/60 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

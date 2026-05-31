@@ -228,11 +228,12 @@ export const InvoicesTab: React.FC<InvoicesTabProps> = ({
             Browse, view, download, and print official VAT tax invoices for past checkout transactions.
           </p>
         </div>
-        <button 
+         <button 
           onClick={fetchSales}
-          className="px-5 py-2.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-ink rounded-xl text-sm font-bold flex items-center gap-2 transition-all self-start md:self-auto"
+          disabled={loading}
+          className="px-5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-ink dark:text-white backdrop-blur-sm rounded-xl text-sm font-bold flex items-center gap-2 transition-all self-start md:self-auto active:scale-95 disabled:opacity-50"
         >
-          <RefreshCw className="w-4 h-4" />
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh Records
         </button>
       </div>

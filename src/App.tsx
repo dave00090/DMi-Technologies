@@ -212,6 +212,52 @@ export default function App() {
     };
   }, []);
 
+  // Automatic Staff Attendance Check-In on login or day start
+  useEffect(() => {
+    if (user && activeBusinessId && activeShopId) {
+      const handleAutoCheckIn = async () => {
+        if (user.role === 'staff' || user.role === 'admin') {
+          const today = new Date().toISOString().split('T')[0];
+          const employees = localDb.getEmployees(activeBusinessId, activeShopId);
+          let employee = employees.find(e => 
+            (e.email && e.email.toLowerCase() === (user.email || '').toLowerCase()) ||
+            e.name.toLowerCase() === user.name.toLowerCase()
+          );
+
+          if (!employee) {
+            // Register as Employee so they are listed in HRM and show in dashboards
+            employee = await localDb.addEmployee({
+              businessId: activeBusinessId,
+              shopId: activeShopId,
+              name: user.name,
+              email: user.email || `${user.username}@dmipos.internal`,
+              phone: '0700000000',
+              role: user.role.toUpperCase(),
+              salary: 15000,
+              hireDate: new Date().toISOString().split('T')[0],
+              status: 'ACTIVE'
+            });
+          }
+
+          const attendances = localDb.getAttendance(employee.id);
+          const hasTodayAttendance = attendances.some(a => a.date === today);
+
+          if (!hasTodayAttendance) {
+            await localDb.addAttendance({
+              employeeId: employee.id,
+              date: today,
+              checkIn: new Date().toLocaleTimeString(),
+              status: 'PRESENT',
+              notes: 'Checked-in automatically on system login'
+            });
+            window.dispatchEvent(new CustomEvent('local-db-update', { detail: { key: 'dmi_pos_attendance' } }));
+          }
+        }
+      };
+      handleAutoCheckIn();
+    }
+  }, [user?.uid, activeBusinessId, activeShopId]);
+
   useEffect(() => {
     document.documentElement.style.setProperty('--app-zoom', zoomLevel.toString());
     try {
@@ -293,8 +339,29 @@ export default function App() {
     localDb.setActiveBusinessId(null);
   };
 
-  const handleLogout = () => {
-    localAuth.logout();
+  const handleLogout = async () => {
+    if (user && activeBusinessId && activeShopId && (user.role === 'staff' || user.role === 'admin')) {
+      const today = new Date().toISOString().split('T')[0];
+      const employees = localDb.getEmployees(activeBusinessId, activeShopId);
+      const employee = employees.find(e => 
+        (e.email && e.email.toLowerCase() === (user.email || '').toLowerCase()) ||
+        e.name.toLowerCase() === user.name.toLowerCase()
+      );
+      if (employee) {
+        const attendances = localDb.getAttendance(employee.id);
+        const todayAttendance = attendances.find(a => a.date === today);
+        if (todayAttendance && !todayAttendance.checkOut) {
+          await localDb.deleteAttendance(todayAttendance.id);
+          await localDb.addAttendance({
+            ...todayAttendance,
+            checkOut: new Date().toLocaleTimeString(),
+            notes: 'Auto-checkout upon logout'
+          });
+          window.dispatchEvent(new CustomEvent('local-db-update', { detail: { key: 'dmi_pos_attendance' } }));
+        }
+      }
+    }
+    await localAuth.logout();
     setUser(null);
     handleExitBusiness();
   };

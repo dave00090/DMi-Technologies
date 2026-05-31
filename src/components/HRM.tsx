@@ -459,30 +459,16 @@ export const HRM: React.FC<HRMProps> = ({ businessId, shopId, user }) => {
                 </div>
               </div>
 
-              <div className="space-y-4">
+               <div className="space-y-4">
                 <div className="p-4 bg-bg rounded-2xl border border-border">
                   <p className="text-[10px] font-bold text-muted uppercase mb-2">Quick Actions</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button 
-                      onClick={handleCheckIn}
-                      className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-xl hover:border-indigo-500 transition-all"
-                    >
-                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                      <span className="text-[10px] font-bold uppercase">Check In</span>
-                    </button>
-                    <button 
-                      onClick={handleCheckOut}
-                      className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-xl hover:border-indigo-500 transition-all"
-                    >
-                      <XCircle className="w-5 h-5 text-rose-500" />
-                      <span className="text-[10px] font-bold uppercase">Check Out</span>
-                    </button>
+                  <div>
                     <button 
                       onClick={() => setIsPayModalOpen(true)}
-                      className="flex flex-col items-center gap-2 p-3 bg-card border border-border rounded-xl hover:border-indigo-500 transition-all"
+                      className="flex items-center justify-center gap-2 w-full p-3 bg-card border border-border rounded-xl hover:border-indigo-500 transition-all text-xs font-bold uppercase text-indigo-600 dark:text-indigo-400"
                     >
                       <DollarSign className="w-5 h-5 text-indigo-500" />
-                      <span className="text-[10px] font-bold uppercase">Pay Salary</span>
+                      <span>Pay Salary</span>
                     </button>
                   </div>
                 </div>

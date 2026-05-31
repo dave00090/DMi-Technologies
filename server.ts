@@ -288,8 +288,9 @@ async function startServer() {
   const DATA_DIR = path.resolve(__dirname, 'data');
   const DB_FILE = path.join(DATA_DIR, 'cloud_db.json');
 
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+  const supabaseUrlRaw = process.env.VITE_SUPABASE_URL || '';
   const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+  const supabaseUrl = supabaseUrlRaw.replace(/\/+$/, '').replace(/\/rest\/v1\/?$/, '');
   const supabaseClient = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
   async function loadCloudDbFromSupabase() {
