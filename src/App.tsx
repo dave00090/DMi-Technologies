@@ -34,8 +34,8 @@ import { SubscriptionLockScreen } from './components/SubscriptionLockScreen';
 import { masterService, supabase } from './services/masterService';
 
 import { InvoicesTab } from './components/InvoicesTab';
-import { GuestDesk } from './components/GuestDesk';
-import { GuestPortal } from './components/GuestPortal';
+import { GuestDesk } from './components/GuestDeskPanel';
+import { GuestPortal } from './components/GuestPortalView';
 
 export default function App() {
   const [isActivated, setIsActivated] = useState(localDb.isActivated());
