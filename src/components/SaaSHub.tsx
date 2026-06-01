@@ -161,49 +161,83 @@ export const SaaSHub: React.FC = () => {
   };
 
   const runProvisioningEngine = async () => {
+    const licenseId = crypto.randomUUID();
+    const placeholderKey = `PENDING_KEY_${licenseId.slice(0, 8)}`;
+    
     const logs = [
       `[PROVISIONER] Initializing automated backend partition creation...`,
-      `[SUPABASE] Provisioning isolated data namespace business_id: "${crypto.randomUUID()}"`,
-      `[SUPABASE] Attaching Schema constraints & executing isolated table indexing...`,
+      `[SUPABASE] Provisioning isolated data namespace business_id: "${licenseId}"`,
+      `[SUPABASE] Attaching Schema and executing isolated table indexing...`,
       `[PROVISIONER] Seeding default setup: 1 admin profile and ${plans[selectedPlan].shops} shop records...`,
-      `[MASTER ADMIN] Generating secure cryptographically verified hardware-locked license key...`,
+      `[MASTER ADMIN] Saving client onboarding under status "PENDING"...`,
+      `[MASTER ADMIN] Awaiting Master Admin (David) manual payment confirmation in general panel...`
     ];
 
     for (let i = 0; i < logs.length; i++) {
-      await new Promise(r => setTimeout(r, 600));
+      await new Promise(r => setTimeout(r, 650));
       addProvLog(logs[i]);
     }
 
-    // Generate Key
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    const key = `DMI-${selectedPlan.toUpperCase()}-${Array.from({length:4}, () => chars[Math.floor(Math.random()*chars.length)]).join('')}-${Array.from({length:4}, () => chars[Math.floor(Math.random()*chars.length)]).join('')}-ACTIVE`;
-    
-    // Attempt registration into Supabase central DB
+    // Attempt registration into Supabase central DB with PENDING state
     try {
-      const standardExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
       const newLicense = {
-        id: crypto.randomUUID(),
-        license_key: key,
+        id: licenseId,
+        license_key: placeholderKey,
         client_name: businessName,
-        status: 'ACTIVE',
+        status: 'PENDING',
         system_name: 'DMI MULTITENANT POS',
         penalty_amount: 0,
         license_fee: plans[selectedPlan].price,
         plan_type: selectedPlan.toUpperCase(),
-        expires_at: standardExpiry,
-        payment_status: 'PAID',
+        expires_at: null, // Set to null until approved
+        payment_status: 'PENDING_PAYMENT',
         payment_phone: phone,
-        mpesa_reference: 'AUTOPAY_WIDGET'
+        mpesa_reference: 'SAAS_HUB_ONBOARD'
       };
 
       await supabase.from('licenses').insert(newLicense);
-      addProvLog(`[MASTER ADMIN] Done! License registered into database cloud. Expiry: ${new Date(standardExpiry).toLocaleDateString()}`);
-    } catch (e) {
-      addProvLog(`[MASTER ADMIN] Supabase central link missing. Saved tenant partition locally.`);
-    }
+      
+      // Post alert to Master Admin logs
+      await supabase.from('piracy_alerts').insert({
+        id: crypto.randomUUID(),
+        license_id: licenseId,
+        message: `📡 ONBOARDS WIDGET: "${businessName}" signed up for ${plans[selectedPlan].name}. Awaiting KES ${(plans[selectedPlan].price).toLocaleString()} manual confirmation of mobile: ${phone}.`,
+        timestamp: new Date().toISOString()
+      });
 
-    setGeneratedKey(key);
-    setOnboardingStatus('completed');
+      addProvLog(`[MASTER ADMIN] License record created with status: PENDING. Dedicated real-time sync channel initialized.`);
+      addProvLog(`[MASTER ADMIN] Standby for David to click "Approve M-Pesa" in the General Admin oversight list...`);
+
+      // Realtime listener for the Master Admin update
+      const channel = supabase
+        .channel(`saashub-approve-watch-${licenseId}`)
+        .on('postgres_changes', 
+          { 
+            event: 'UPDATE', 
+            schema: 'public', 
+            table: 'licenses',
+            filter: `id=eq.${licenseId}`
+          }, 
+          (payload) => {
+            if (payload.new && payload.new.status === 'ACTIVE' && payload.new.license_key) {
+              addProvLog(`[REALTIME LINK] 🟢 SYSTEM ALLOW RECEIVED! PAYMENT OFFICIALLY CONFIRMED!`);
+              addProvLog(`[REALTIME LINK] Generated active license key: ${payload.new.license_key}`);
+              addProvLog(`[REALTIME LINK] Set validity: 30 days. Expiry: ${payload.new.expires_at ? new Date(payload.new.expires_at).toLocaleDateString() : 'N/A'}`);
+              
+              setGeneratedKey(payload.new.license_key);
+              setOnboardingStatus('completed');
+              channel.unsubscribe();
+            }
+          }
+        )
+        .subscribe();
+
+    } catch (e: any) {
+      addProvLog(`[MASTER ADMIN] Connection lost. Reverted to standalone local fallback key.`);
+      const fallbackKey = `DMI-${selectedPlan.toUpperCase()}-FALLBACK-ACTIVE`;
+      setGeneratedKey(fallbackKey);
+      setOnboardingStatus('completed');
+    }
   };
 
   const addProvLog = (msg: string) => {
@@ -485,7 +519,7 @@ export const SaaSHub: React.FC = () => {
                     }`}
                   >
                     {onboardingStatus === 'paying' && 'Awaiting Payment PIN entry...'}
-                    {onboardingStatus === 'provisioning' && 'Confirming Webhook -> Setup DB Tenant...'}
+                    {onboardingStatus === 'provisioning' && "Awaiting David's Confirmation in Master Admin..."}
                     {onboardingStatus === 'idle' && `Register Merchant & Request payment`}
                     {onboardingStatus === 'completed' && 'Onboard complete! Generate Another key'}
                   </button>

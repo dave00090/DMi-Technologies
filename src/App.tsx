@@ -37,6 +37,8 @@ import { InvoicesTab } from './components/InvoicesTab';
 import { GuestDeskPanel } from './components/GuestDeskPanel';
 import { GuestPortal } from './components/GuestPortalView';
 
+import { UserCheck, HeartHandshake } from 'lucide-react';
+
 export default function App() {
   const [isActivated, setIsActivated] = useState(localDb.isActivated());
   const [isSystemLocked, setIsSystemLocked] = useState(false);
@@ -67,6 +69,20 @@ export default function App() {
   const [unreadAlerts, setUnreadAlerts] = useState(0);
   const [isSubscriptionExpired, setIsSubscriptionExpired] = useState(false);
   const [licenseExpiryDate, setLicenseExpiryDate] = useState<string | null>(null);
+  const [licensePlan, setLicensePlan] = useState<string | null>(() => {
+    try {
+      const key = localStorage.getItem('dmi_pos_license_key');
+      if (key) {
+        const cacheKey = `dmi_license_cache_${key}`;
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          const decrypted = JSON.parse(atob(cached));
+          return decrypted?.data?.plan_type || null;
+        }
+      }
+    } catch (e) {}
+    return null;
+  });
 
   useEffect(() => {
     localDb.vacuum();
@@ -85,8 +101,9 @@ export default function App() {
         if (!result.success) {
           if (result.isSubscriptionExpired) {
             setIsSubscriptionExpired(true);
-            if (result.data && result.data.expires_at) {
-              setLicenseExpiryDate(result.data.expires_at);
+            if (result.data) {
+              if (result.data.expires_at) setLicenseExpiryDate(result.data.expires_at);
+              setLicensePlan(result.data.plan_type);
             }
           } else if (result.isLocked || result.securityBreach) {
             setIsSystemLocked(true);
@@ -99,8 +116,9 @@ export default function App() {
         } else {
           setIsSubscriptionExpired(false);
           setIsSystemLocked(false);
-          if (result.data && result.data.expires_at) {
+          if (result.data) {
             setLicenseExpiryDate(result.data.expires_at);
+            setLicensePlan(result.data.plan_type);
           }
         }
       }
@@ -136,6 +154,11 @@ export default function App() {
             } else if (payload.eventType === 'UPDATE') {
               const newStatus = payload.new.status;
               const expiresAt = payload.new.expires_at;
+              const newPlan = payload.new.plan_type;
+
+              if (newPlan) {
+                setLicensePlan(newPlan);
+              }
 
               if (expiresAt) {
                 const expiry = new Date(expiresAt);
@@ -392,8 +415,83 @@ export default function App() {
     );
   }
 
+  const getPlanLimits = () => {
+    const norm = (licensePlan || '').toUpperCase();
+    if (norm.includes('GOLD') || norm.includes('HOTEL') || norm.includes('ENTERPRISE') || norm.includes('HOSPITALITY')) {
+      return {
+        hasHrm: true,
+        hasGuestDesk: true,
+        label: 'SaaS Gold Enterprise / Hotel Suite'
+      };
+    }
+    if (norm.includes('SILVER') || norm.includes('GROWTH')) {
+      return {
+        hasHrm: false,
+        hasGuestDesk: false,
+        label: 'Silver Growth'
+      };
+    }
+    return {
+      hasHrm: false,
+      hasGuestDesk: false,
+      label: licensePlan ? licensePlan : 'Bronze Standard / Local-First'
+    };
+  };
+
   const renderContent = () => {
     if (!user || !activeBusinessId || !activeShopId) return null;
+
+    const limits = getPlanLimits();
+
+    if (activeTab === 'hrm' && !limits.hasHrm) {
+      return (
+        <div className="p-12 text-center bg-card rounded-3xl border border-border shadow-md max-w-xl mx-auto my-12 space-y-6">
+          <div className="w-16 h-16 bg-rose-500/10 rounded-2xl flex items-center justify-center text-rose-500 mx-auto">
+            <UserCheck className="w-8 h-8" />
+          </div>
+          <h3 className="text-xl font-black text-ink">HRM Employee Module Locked</h3>
+          <p className="text-sm text-slate-500 leading-relaxed animate-pulse">
+            The Human Resource employee management module, staff salaries, attendance logs, and payroll features require an active <b>SaaS Gold Enterprise</b> subscription level alignment.
+          </p>
+          <div className="inline-block px-3 py-1 text-xs font-bold text-rose-500 bg-rose-50 dark:bg-rose-500/10 rounded-full border border-rose-200 dark:border-rose-500/20">
+            Registered Tier: {limits.label}
+          </div>
+          <div className="pt-2">
+            <button 
+              onClick={() => setActiveTab('pos')}
+              className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs hover:brightness-110 transition-all uppercase tracking-wider"
+            >
+              Return to POS Cashpoint
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (activeTab === 'guest-requests' && !limits.hasGuestDesk) {
+      return (
+        <div className="p-12 text-center bg-card rounded-3xl border border-border shadow-md max-w-xl mx-auto my-12 space-y-6">
+          <div className="w-16 h-16 bg-rose-500/10 rounded-2xl flex items-center justify-center text-rose-500 mx-auto">
+            <HeartHandshake className="w-8 h-8" />
+          </div>
+          <h3 className="text-xl font-black text-ink">Hotel Guest Desk Locked</h3>
+          <p className="text-sm text-slate-500 leading-relaxed animate-pulse">
+            The Digital Wall Menu QR order requests integration, checkout billing, and motel guest desk rooms service require a <b>Hotel & Lodge Suite / Gold</b> license tier.
+          </p>
+          <div className="inline-block px-3 py-1 text-xs font-bold text-rose-500 bg-rose-50 dark:bg-rose-500/10 rounded-full border border-rose-200 dark:border-rose-500/20">
+            Registered Tier: {limits.label}
+          </div>
+          <div className="pt-2">
+            <button 
+              onClick={() => setActiveTab('pos')}
+              className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs hover:brightness-110 transition-all uppercase tracking-wider"
+            >
+              Return to POS Cashpoint
+            </button>
+          </div>
+        </div>
+      );
+    }
 
     switch (activeTab) {
       case 'pos':

@@ -5,6 +5,7 @@ import { Plus, Store, ChevronRight, ArrowLeft, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SafeImage } from './SafeImage';
 import { BRAND_LOGO_URL, DMI_FALLBACK_ICON } from '../constants';
+import { supabase } from '../services/masterService';
 
 interface ShopSelectorProps {
   business: BusinessProfile;
@@ -22,6 +23,49 @@ export const ShopSelector: React.FC<ShopSelectorProps> = ({ business, onSelect, 
     location: '',
     phone: ''
   });
+  const [licensePlan, setLicensePlan] = useState<string | null>(() => {
+    try {
+      const key = localStorage.getItem('dmi_pos_license_key');
+      if (key) {
+        const cacheKey = `dmi_license_cache_${key}`;
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          const decrypted = JSON.parse(atob(cached));
+          return decrypted?.data?.plan_type || null;
+        }
+      }
+    } catch (e) {}
+    return null;
+  });
+
+  useEffect(() => {
+    const fetchLivePlan = async () => {
+      const key = localStorage.getItem('dmi_pos_license_key');
+      if (!key) return;
+      try {
+        const { data } = await supabase
+          .from('licenses')
+          .select('plan_type')
+          .eq('license_key', key)
+          .single();
+        if (data?.plan_type) {
+          setLicensePlan(data.plan_type);
+        }
+      } catch (e) {}
+    };
+    fetchLivePlan();
+  }, []);
+
+  const getPlanLimits = () => {
+    const norm = (licensePlan || '').toUpperCase();
+    if (norm.includes('GOLD') || norm.includes('HOTEL') || norm.includes('ENTERPRISE') || norm.includes('HOSPITALITY')) {
+      return { shopsLimit: 999, label: 'SaaS Gold Enterprise' };
+    }
+    if (norm.includes('SILVER') || norm.includes('GROWTH')) {
+      return { shopsLimit: 3, label: 'Silver Growth' };
+    }
+    return { shopsLimit: 1, label: licensePlan ? licensePlan : 'Bronze Standard / Local-First' };
+  };
 
   useEffect(() => {
     if (!business?.id) return;
@@ -51,6 +95,13 @@ export const ShopSelector: React.FC<ShopSelectorProps> = ({ business, onSelect, 
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    const limits = getPlanLimits();
+    if (shops.length >= limits.shopsLimit) {
+      alert(`LIMITATION EXCEEDED: Your current license plan "${limits.label}" strictly limits operations to a maximum of ${limits.shopsLimit} active shop location(s).\n\nPlease upgrade your tier via the SaaS Hub or coordinate with David to expand your licensing capacity.`);
+      setShowCreate(false);
+      return;
+    }
+
     try {
       const created = await db.addShop({
         ...newShop,
