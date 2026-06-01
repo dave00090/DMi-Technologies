@@ -576,15 +576,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, businessId, shopId }
                 <p className="text-sm text-muted">Sales metrics by individual staff members</p>
               </div>
             </div>
-            <div className="flex bg-neutral-100/40 dark:bg-white/5 backdrop-blur-sm p-1 rounded-xl border border-border/60 dark:border-white/10">
+            <div className="flex bg-sky-500/10 dark:bg-sky-500/15 p-1 rounded-xl border border-sky-500/30">
               {(['today', '7days', '30days', 'thisMonth'] as const).map((range) => (
                 <button
                   key={range}
                   onClick={() => setStaffDateRange(range)}
-                  className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                  className={`px-4 py-1.5 text-xs font-black rounded-lg transition-all ${
                     staffDateRange === range 
-                      ? 'bg-white dark:bg-white/10 text-indigo-600 dark:text-white shadow-sm border border-neutral-200/50 dark:border-white/10' 
-                      : 'text-muted hover:text-ink hover:bg-neutral-200/20 dark:hover:bg-white/5'
+                      ? 'bg-sky-500/25 text-black border border-sky-500/40 shadow-sm' 
+                      : 'text-black/70 hover:text-black hover:bg-sky-500/15'
                   }`}
                 >
                   {range === 'today' ? 'Today' : range === '7days' ? 'Last 7 Days' : range === '30days' ? 'Last 30 Days' : 'Monthly'}

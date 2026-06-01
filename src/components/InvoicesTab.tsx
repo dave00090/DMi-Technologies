@@ -231,9 +231,9 @@ export const InvoicesTab: React.FC<InvoicesTabProps> = ({
          <button 
           onClick={fetchSales}
           disabled={loading}
-          className="px-5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-ink dark:text-white backdrop-blur-sm rounded-xl text-sm font-bold flex items-center gap-2 transition-all self-start md:self-auto active:scale-95 disabled:opacity-50"
+          className="px-5 py-2.5 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-black font-black backdrop-blur-sm rounded-xl text-sm flex items-center gap-2 transition-all self-start md:self-auto active:scale-95 disabled:opacity-50"
         >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-4 h-4 text-sky-600 ${loading ? 'animate-spin' : ''}`} />
           Refresh Records
         </button>
       </div>

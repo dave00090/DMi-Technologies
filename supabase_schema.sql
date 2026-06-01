@@ -924,20 +924,46 @@ on public.cloud_sync_state for all using (true) with check (true);
 -- In case you wish to subscribe to live updates on terminals instantly!
 -- =========================================================================
 
-begin;
-  -- drop the publication if it already exists to purge old tables list
-  drop publication if exists supabase_realtime;
+do $$
+begin
+  -- Ensure publication exists first
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    create publication supabase_realtime;
+  end if;
   
-  -- create publishing publication
-  create publication supabase_realtime for table 
-    public.businesses, 
-    public.shops, 
-    public.products, 
-    public.sales,
-    public.debts,
-    public.customers,
-    public.guest_requests,
-    public.sale_items,
-    public.licenses,
-    public.piracy_alerts;
-commit;
+  -- Add tables safely
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'businesses') then
+    alter publication supabase_realtime add table public.businesses;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'shops') then
+    alter publication supabase_realtime add table public.shops;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'products') then
+    alter publication supabase_realtime add table public.products;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'sales') then
+    alter publication supabase_realtime add table public.sales;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'debts') then
+    alter publication supabase_realtime add table public.debts;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'customers') then
+    alter publication supabase_realtime add table public.customers;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'guest_requests') then
+    alter publication supabase_realtime add table public.guest_requests;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'sale_items') then
+    alter publication supabase_realtime add table public.sale_items;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'licenses') then
+    alter publication supabase_realtime add table public.licenses;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'piracy_alerts') then
+    alter publication supabase_realtime add table public.piracy_alerts;
+  end if;
+exception when others then
+  -- In case we completely lack privileges on the publication, degrade gracefully instead of crashing the migration
+  raise notice 'Could not customize supabase_realtime publication: %', SQLERRM;
+end;
+$$;
