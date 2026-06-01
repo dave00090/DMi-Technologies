@@ -48,6 +48,43 @@ const STORAGE_KEYS = {
 
 const ACTIVATION_PIN = '8124'; // Master activation PIN for the developer to sell the app
 
+// --- Local Client-Side Database Encryption At Rest Helpers ---
+export function encryptString(text: string): string {
+  if (!text) return text;
+  const active = localStorage.getItem('dmi_pos_encryption_active') !== 'false';
+  if (!active) return text;
+  
+  const pin = localStorage.getItem('dmi_pos_encryption_pin') || '8124_SECURE_DMI_KEY';
+  let result = '';
+  for (let i = 0; i < text.length; i++) {
+    const charCode = text.charCodeAt(i);
+    const keyChar = pin.charCodeAt(i % pin.length);
+    const encrypted = charCode ^ (keyChar + i);
+    result += String.fromCharCode(encrypted);
+  }
+  return 'ENC__' + btoa(unescape(encodeURIComponent(result)));
+}
+
+export function decryptString(cipher: string): string {
+  if (!cipher || !cipher.startsWith('ENC__')) return cipher;
+  try {
+    const pin = localStorage.getItem('dmi_pos_encryption_pin') || '8124_SECURE_DMI_KEY';
+    const cleanCipher = cipher.substring(5);
+    const text = decodeURIComponent(escape(atob(cleanCipher)));
+    let result = '';
+    for (let i = 0; i < text.length; i++) {
+      const charCode = text.charCodeAt(i);
+      const keyChar = pin.charCodeAt(i % pin.length);
+      const decrypted = charCode ^ (keyChar + i);
+      result += String.fromCharCode(decrypted);
+    }
+    return result;
+  } catch (e) {
+    console.error('CRITICAL local decrypt failure. PIN mismatched or database corrupted:', e);
+    return '';
+  }
+}
+
 // In-memory cache for synchronous access
 const dbCache: Record<string, any> = {};
 
@@ -58,7 +95,18 @@ export async function initDb() {
     const allKeys = await idbKeys(customStore);
     for (const key of allKeys) {
       if (typeof key === 'string' && (key.startsWith('dmi_pos_') || key.startsWith('pos_cart_'))) {
-        dbCache[key] = await idbGet(key, customStore);
+        let val = await idbGet(key, customStore);
+        if (typeof val === 'string' && val.startsWith('ENC__')) {
+          const decrypted = decryptString(val);
+          if (decrypted) {
+            try {
+              val = JSON.parse(decrypted);
+            } catch (e) {
+              console.error('Failed parsing decrypted IDB value for:', key);
+            }
+          }
+        }
+        dbCache[key] = val;
       }
     }
   } catch (e) {
@@ -70,10 +118,13 @@ export async function initDb() {
     const key = localStorage.key(i);
     if (key && (key.startsWith('dmi_pos_') || key.startsWith('pos_cart_'))) {
       if (dbCache[key] === undefined) {
-        const localData = localStorage.getItem(key);
+        let localData = localStorage.getItem(key);
         if (localData && localData !== '__idb_ref__') {
+          if (localData.startsWith('ENC__')) {
+            localData = decryptString(localData);
+          }
           try {
-            dbCache[key] = JSON.parse(localData);
+            dbCache[key] = JSON.parse(localData!);
           } catch (e) {
             dbCache[key] = null;
           }
@@ -88,10 +139,21 @@ window.addEventListener('storage', async (event) => {
   if (event.key && (event.key.startsWith('dmi_pos_') || event.key.startsWith('pos_cart_'))) {
     try {
       if (event.newValue === '__idb_ref__') {
-        dbCache[event.key] = await idbGet(event.key, customStore);
+        let val = await idbGet(event.key, customStore);
+        if (typeof val === 'string' && val.startsWith('ENC__')) {
+          const decrypted = decryptString(val);
+          if (decrypted) {
+            try { val = JSON.parse(decrypted); } catch (e) {}
+          }
+        }
+        dbCache[event.key] = val;
       } else if (event.newValue) {
+        let rawVal = event.newValue;
+        if (rawVal.startsWith('ENC__')) {
+          rawVal = decryptString(rawVal);
+        }
         try {
-          dbCache[event.key] = JSON.parse(event.newValue);
+          dbCache[event.key] = JSON.parse(rawVal);
         } catch (e) {
           dbCache[event.key] = null;
         }
@@ -110,8 +172,11 @@ export function getLocal<Value>(key: string, defaultValue: Value): Value {
   if (dbCache[key] !== undefined && dbCache[key] !== null) {
     return dbCache[key] as Value;
   }
-  const data = localStorage.getItem(key);
+  let data = localStorage.getItem(key);
   if (data === '__idb_ref__') return defaultValue; // Should have been loaded by initDb
+  if (data && data.startsWith('ENC__')) {
+    data = decryptString(data);
+  }
   return data ? JSON.parse(data) : defaultValue;
 }
 
@@ -154,9 +219,33 @@ export async function setLocal<Value>(key: string, data: Value): Promise<void> {
   // Update cache immediately
   dbCache[key] = data;
   
+  // Choose if this key should be encrypted at rest on disk
+  const isExcludedKey = key === STORAGE_KEYS.SETTINGS || 
+                         key === STORAGE_KEYS.ACTIVE_BUSINESS_ID ||
+                         key === STORAGE_KEYS.ACTIVE_SHOP_ID ||
+                         key === STORAGE_KEYS.IS_ACTIVATED ||
+                         key === 'dmi_pos_license_key' ||
+                         key === 'dmi_pos_encryption_pin' ||
+                         key === 'dmi_pos_encryption_active' ||
+                         key.startsWith('pos_cart_');
+
+  const shouldEncrypt = !isExcludedKey && key.startsWith('dmi_pos_') && localStorage.getItem('dmi_pos_encryption_active') !== 'false';
+
+  // Process large fields first
+  let processedData = data;
+  try {
+    processedData = await offloadLargeFields(data, key);
+  } catch (e) {}
+
+  let persistentData: any = processedData;
+  if (shouldEncrypt && processedData !== null && processedData !== undefined) {
+    const stringified = JSON.stringify(processedData);
+    persistentData = encryptString(stringified);
+  }
+
   // Always save to IndexedDB as the primary persistent store
   try {
-    await idbSet(key, data, customStore);
+    await idbSet(key, persistentData, customStore);
   } catch (e) {
     console.error(`Failed to save ${key} to IndexedDB:`, e);
   }
@@ -182,17 +271,20 @@ export async function setLocal<Value>(key: string, data: Value): Promise<void> {
   try {
     const isLargeData = key === STORAGE_KEYS.SALES || 
                        key === STORAGE_KEYS.PRODUCTS || 
-                       key === STORAGE_KEYS.LEDGER || 
-                       key.startsWith('pos_cart_');
+                       key === STORAGE_KEYS.LEDGER;
 
-    const processedData = await offloadLargeFields(data, key);
-    const stringified = JSON.stringify(processedData);
+    let stringValue = '';
+    if (shouldEncrypt) {
+      stringValue = persistentData as string;
+    } else {
+      stringValue = JSON.stringify(processedData);
+    }
     
     // If it's a known large data key or the stringified result is > 50KB, 
     // prefer saving just a reference to localStorage to avoid quota issues
     let success = false;
-    if (!isLargeData && stringified.length < 50000) {
-      success = safeSetItem(key, stringified);
+    if (!isLargeData && stringValue.length < 50000) {
+      success = safeSetItem(key, stringValue);
     } else {
       success = safeSetItem(key, '__idb_ref__');
     }

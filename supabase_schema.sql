@@ -450,6 +450,8 @@ create table if not exists public.licenses (
     penalty_amount numeric(12,2) default 0.00,
     license_fee numeric(12,2) default 0.00,
     grace_period_days integer default 7,
+    expires_at timestamp with time zone,
+    payment_status text default 'PENDING_PAYMENT',
     created_at timestamp with time zone default timezone('utc'::text, now()),
     last_updated timestamp with time zone default timezone('utc'::text, now())
 );
@@ -571,6 +573,8 @@ alter table public.sale_items add column if not exists product_id text;
 -- Licenses & piracy alerts patch
 alter table public.licenses add column if not exists last_updated timestamp with time zone default timezone('utc'::text, now());
 alter table public.licenses add column if not exists created_at timestamp with time zone default timezone('utc'::text, now());
+alter table public.licenses add column if not exists expires_at timestamp with time zone;
+alter table public.licenses add column if not exists payment_status text default 'PENDING_PAYMENT';
 
 alter table public.login_history add column if not exists last_updated timestamp with time zone default timezone('utc'::text, now());
 

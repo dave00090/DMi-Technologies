@@ -496,9 +496,62 @@ async function startServer() {
           const curTime = currentItem.lastUpdated ? new Date(currentItem.lastUpdated).getTime() : 0;
           const newItemTime = new Date(item.lastUpdated).getTime();
 
-          // Last-Write-Wins rule
-          if (newItemTime >= curTime) {
-            currentTableList[index] = { ...currentItem, ...item };
+          if (table === 'products') {
+            // DIFFERENTIAL STOCK DELTA MERGE: Prevents offline client from overwriting cloud stock changes
+            const mergedItem = { ...currentItem, ...item };
+            if (currentItem.variants && item.variants && Array.isArray(currentItem.variants) && Array.isArray(item.variants)) {
+              mergedItem.variants = currentItem.variants.map((serverVar: any) => {
+                const clientVar = item.variants.find((cv: any) => cv.id === serverVar.id);
+                if (clientVar) {
+                  if (clientVar.stock !== serverVar.stock) {
+                    const originalStockOnClient = clientVar.prevStock !== undefined ? clientVar.prevStock : serverVar.stock;
+                    const stockDelta = clientVar.stock - originalStockOnClient;
+                    const resolvedStock = Math.max(0, serverVar.stock + stockDelta);
+                    
+                    console.log(`[CONFLICT RESOLVER] Product "${item.name}" Var "${clientVar.name || 'Default'}" Stock Reconciled: Server(${serverVar.stock}) + Delta(${stockDelta}) -> Resolved(${resolvedStock})`);
+                    return { ...serverVar, ...clientVar, stock: resolvedStock };
+                  }
+                  return { ...serverVar, ...clientVar };
+                }
+                return serverVar;
+              });
+            }
+            // Preserve newer descriptive attributes but merge stock above
+            if (newItemTime < curTime) {
+              mergedItem.name = currentItem.name;
+              mergedItem.price = currentItem.price;
+              mergedItem.lastUpdated = currentItem.lastUpdated;
+            }
+            currentTableList[index] = mergedItem;
+          } else if (table === 'customers') {
+            // DIFFERENTIAL CUSTOMER BALANCE DELTA MERGE
+            const mergedItem = { ...currentItem, ...item };
+            if (currentItem.balance !== undefined && item.balance !== undefined && currentItem.balance !== item.balance) {
+              const clientOriginalBalance = item.prevBalance !== undefined ? item.prevBalance : currentItem.balance;
+              const balanceDelta = item.balance - clientOriginalBalance;
+              const resolvedBalance = currentItem.balance + balanceDelta;
+              
+              console.log(`[CONFLICT RESOLVER] Customer "${item.name}" Balance Reconciled: Server(${currentItem.balance}) + Delta(${balanceDelta}) -> Resolved(${resolvedBalance})`);
+              mergedItem.balance = resolvedBalance;
+            }
+            currentTableList[index] = mergedItem;
+          } else if (table === 'debts') {
+            // DIFFERENTIAL CUSTOMER DEBT REMAINING AMOUNT DELTA MERGE
+            const mergedItem = { ...currentItem, ...item };
+            if (currentItem.remaining_amount !== undefined && item.remaining_amount !== undefined && currentItem.remaining_amount !== item.remaining_amount) {
+              const originalOnClient = item.prevRemainingAmount !== undefined ? item.prevRemainingAmount : currentItem.remaining_amount;
+              const delta = item.remaining_amount - originalOnClient;
+              const resolved = Math.max(0, currentItem.remaining_amount + delta);
+              
+              console.log(`[CONFLICT RESOLVER] Debt "${item.id}" Reconciled: Server(${currentItem.remaining_amount}) + Delta(${delta}) -> Resolved(${resolved})`);
+              mergedItem.remaining_amount = resolved;
+            }
+            currentTableList[index] = mergedItem;
+          } else {
+            // Standard Last-Write-Wins rule for other entities
+            if (newItemTime >= curTime) {
+              currentTableList[index] = { ...currentItem, ...item };
+            }
           }
         } else {
           currentTableList.push(item);

@@ -23,8 +23,7 @@ import {
   HeartHandshake,
   Wifi,
   WifiOff,
-  RefreshCw,
-  Laptop
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
