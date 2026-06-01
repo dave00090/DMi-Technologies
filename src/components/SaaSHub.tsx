@@ -46,8 +46,9 @@ export const SaaSHub: React.FC = () => {
   // 2. RLS & Multi-Tenancy State
   const [rlsActive, setRlsActive] = useState(true);
   const [simulatedQueryLog, setSimulatedQueryLog] = useState<any[]>([]);
-  const [selectedMerchantFilter, setSelectedMerchantFilter] = useState('b-merch-a');
-  const [dbLicenses, setDbLicenses] = useState<any[]>([]);
+  const [manualClientName, setManualClientName] = useState('Savannah Boutique Ltd');
+  const [manualMerchantId, setManualMerchantId] = useState('b-merch-a');
+  const [manualCashierName, setManualCashierName] = useState('Kimani Njuguna');
 
   // 3. Database Encryption Lab State
   const [encryptActive, setEncryptActive] = useState(() => {
@@ -76,23 +77,6 @@ export const SaaSHub: React.FC = () => {
     const savedPin = localStorage.getItem('dmi_pos_encryption_pin');
     if (savedPin) setEncryptionPin(savedPin);
   }, []);
-
-  // Fetch licenses dynamically from Database central cloud
-  useEffect(() => {
-    const fetchLicenses = async () => {
-      try {
-        const { data } = await supabase
-          .from('licenses')
-          .select('id, client_name, plan_type, status, payment_phone');
-        if (data) {
-          setDbLicenses(data);
-        }
-      } catch (e) {
-        console.error('Error fetching database licenses for RLS simulation:', e);
-      }
-    };
-    fetchLicenses();
-  }, [onboardingStatus, activeStep]);
 
   // Sync Encryption Config to LocalStorage
   const handleSaveEncryptionSetting = () => {
@@ -269,22 +253,20 @@ export const SaaSHub: React.FC = () => {
   };
 
   const getSimulatedMerchants = () => {
-    const defaultMerchants = [
-      { businessId: 'b-merch-a', businessName: 'Savannah Boutique Ltd', cashier: 'Kimani Njuguna', sales: 45000, itemsCount: 15 },
+    const backgroundMerchants = [
       { businessId: 'b-merch-b', businessName: 'Safari Supermarket Eldoret', cashier: 'Amina Mohamed', sales: 125000, itemsCount: 41 },
       { businessId: 'b-merch-c', businessName: 'Great Rift Pharmacy Nakuru', cashier: 'Charles Kiprop', sales: 32000, itemsCount: 8 }
     ];
 
-    const mappedDb = dbLicenses.map(lic => ({
-      businessId: lic.id,
-      businessName: `${lic.client_name} (${lic.plan_type || 'Classic Plan'})`,
-      cashier: lic.payment_phone ? `Agent - ${lic.payment_phone}` : 'System Admin',
-      sales: lic.status === 'ACTIVE' ? (lic.license_fee ? Number(lic.license_fee) : 3000) : 0,
-      itemsCount: lic.status === 'ACTIVE' ? 12 : 0,
-      isDbMerged: true
-    }));
+    const activeUserMerchant = {
+      businessId: manualMerchantId || 'b-merch-a',
+      businessName: manualClientName || 'Savannah Boutique Ltd',
+      cashier: manualCashierName || 'Kimani Njuguna',
+      sales: 45000,
+      itemsCount: 15
+    };
 
-    return [...defaultMerchants, ...mappedDb];
+    return [activeUserMerchant, ...backgroundMerchants];
   };
 
   // Run RLS live database simulation
@@ -293,8 +275,8 @@ export const SaaSHub: React.FC = () => {
 
     let results = [];
     if (rlsActive) {
-      // Enforce RLS filter: JWT context can only view their own
-      const found = merchants.find(m => m.businessId === selectedMerchantFilter);
+      // Enforce RLS filter: JWT context can only view their own match
+      const found = merchants.find(m => m.businessId === (manualMerchantId || 'b-merch-a'));
       results = found ? [found] : [];
     } else {
       // Security leak! Shows EVERY business sales to any cashier on standard fetches
@@ -688,30 +670,58 @@ CREATE POLICY "Merchant Sales Isolation" ON public.sales
               </div>
 
               <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                Simulate pulling system business transactions. Under leaky mode, query pulls sales of ALL merchant registries across Kenya. Under active secure RLS mode, limits pulls strictly to the selected shop's context.
+                Simulate pulling system business transactions. Under leaky mode, query pulls sales of ALL merchant registries across Kenya. Under active secure RLS mode, limits pulls strictly to your manually configured shop's context shown below.
               </p>
 
               {/* simulated actions */}
-              <div className="flex flex-col sm:flex-row gap-3 bg-slate-50 dark:bg-slate-900/40 p-4 border border-border rounded-xl mb-4 text-xs">
-                <div className="flex-1 space-y-1">
-                  <span className="font-bold text-slate-500 uppercase text-[10px] block">Active Session Token (Select Shop Context):</span>
-                  <select
-                    value={selectedMerchantFilter}
-                    onChange={(e) => {
-                      setSelectedMerchantFilter(e.target.value);
-                      setSimulatedQueryLog([]);
-                    }}
-                    className="w-full text-xs font-semibold bg-white dark:bg-slate-800 border border-border rounded-md px-2 py-1.5 text-ink focus:outline-none"
-                  >
-                    {getSimulatedMerchants().map(m => (
-                      <option key={m.businessId} value={m.businessId}>
-                        {m.businessName} [{m.businessId.slice(0, 8)}]
-                      </option>
-                    ))}
-                  </select>
+              <div className="bg-slate-50 dark:bg-slate-900/40 p-4 border border-border rounded-xl mb-4 space-y-3.5 text-xs">
+                <div className="font-bold text-slate-500 uppercase text-[10px] tracking-wider block border-b border-border/60 pb-1.5">
+                  🛡️ Active Session Token Context Configuration
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Shop / Client Name</label>
+                    <input
+                      type="text"
+                      value={manualClientName}
+                      onChange={(e) => {
+                        setManualClientName(e.target.value);
+                        setSimulatedQueryLog([]);
+                      }}
+                      placeholder="e.g. Savannah Boutique Ltd"
+                      className="w-full text-xs font-semibold bg-white dark:bg-slate-800 border border-border rounded-md px-3 py-1.5 text-ink focus:border-brand focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Business ID (RLS claim)</label>
+                    <input
+                      type="text"
+                      value={manualMerchantId}
+                      onChange={(e) => {
+                        setManualMerchantId(e.target.value);
+                        setSimulatedQueryLog([]);
+                      }}
+                      placeholder="e.g. b-merch-a"
+                      className="w-full text-xs font-semibold bg-white dark:bg-slate-800 border border-border rounded-md px-3 py-1.5 text-ink focus:border-brand focus:outline-none font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Active Cashier Name</label>
+                    <input
+                      type="text"
+                      value={manualCashierName}
+                      onChange={(e) => {
+                        setManualCashierName(e.target.value);
+                        setSimulatedQueryLog([]);
+                      }}
+                      placeholder="e.g. Kimani Njuguna"
+                      className="w-full text-xs font-semibold bg-white dark:bg-slate-800 border border-border rounded-md px-3 py-1.5 text-ink focus:border-brand focus:outline-none"
+                    />
+                  </div>
                 </div>
 
-                <div className="flex items-end">
+                <div className="pt-1 flex justify-end">
                   <button
                     onClick={runRlsSimulation}
                     className="w-full sm:w-auto bg-brand hover:brightness-115 text-white font-bold px-4 py-2 rounded-lg text-xs transition-colors uppercase tracking-wider whitespace-nowrap"
