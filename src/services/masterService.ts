@@ -27,7 +27,7 @@ const mockSupabase = {
   },
   channel: () => ({
     on: function() { return this; },
-    subscribe: () => ({})
+    subscribe: () => ({ unsubscribe: () => {} })
   }),
   removeChannel: () => Promise.resolve()
 } as any;

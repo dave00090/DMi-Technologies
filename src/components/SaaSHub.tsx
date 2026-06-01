@@ -46,7 +46,8 @@ export const SaaSHub: React.FC = () => {
   // 2. RLS & Multi-Tenancy State
   const [rlsActive, setRlsActive] = useState(true);
   const [simulatedQueryLog, setSimulatedQueryLog] = useState<any[]>([]);
-  const [selectedMerchantFilter, setSelectedMerchantFilter] = useState('ALL');
+  const [selectedMerchantFilter, setSelectedMerchantFilter] = useState('b-merch-a');
+  const [dbLicenses, setDbLicenses] = useState<any[]>([]);
 
   // 3. Database Encryption Lab State
   const [encryptActive, setEncryptActive] = useState(() => {
@@ -75,6 +76,23 @@ export const SaaSHub: React.FC = () => {
     const savedPin = localStorage.getItem('dmi_pos_encryption_pin');
     if (savedPin) setEncryptionPin(savedPin);
   }, []);
+
+  // Fetch licenses dynamically from Database central cloud
+  useEffect(() => {
+    const fetchLicenses = async () => {
+      try {
+        const { data } = await supabase
+          .from('licenses')
+          .select('id, client_name, plan_type, status, payment_phone');
+        if (data) {
+          setDbLicenses(data);
+        }
+      } catch (e) {
+        console.error('Error fetching database licenses for RLS simulation:', e);
+      }
+    };
+    fetchLicenses();
+  }, [onboardingStatus, activeStep]);
 
   // Sync Encryption Config to LocalStorage
   const handleSaveEncryptionSetting = () => {
@@ -250,23 +268,34 @@ export const SaaSHub: React.FC = () => {
     setTimeout(() => setIsCopied(false), 2000);
   };
 
-  // Run RLS live database simulation
-  const runRlsSimulation = () => {
-    const merchants = [
+  const getSimulatedMerchants = () => {
+    const defaultMerchants = [
       { businessId: 'b-merch-a', businessName: 'Savannah Boutique Ltd', cashier: 'Kimani Njuguna', sales: 45000, itemsCount: 15 },
       { businessId: 'b-merch-b', businessName: 'Safari Supermarket Eldoret', cashier: 'Amina Mohamed', sales: 125000, itemsCount: 41 },
       { businessId: 'b-merch-c', businessName: 'Great Rift Pharmacy Nakuru', cashier: 'Charles Kiprop', sales: 32000, itemsCount: 8 }
     ];
 
+    const mappedDb = dbLicenses.map(lic => ({
+      businessId: lic.id,
+      businessName: `${lic.client_name} (${lic.plan_type || 'Classic Plan'})`,
+      cashier: lic.payment_phone ? `Agent - ${lic.payment_phone}` : 'System Admin',
+      sales: lic.status === 'ACTIVE' ? (lic.license_fee ? Number(lic.license_fee) : 3000) : 0,
+      itemsCount: lic.status === 'ACTIVE' ? 12 : 0,
+      isDbMerged: true
+    }));
+
+    return [...defaultMerchants, ...mappedDb];
+  };
+
+  // Run RLS live database simulation
+  const runRlsSimulation = () => {
+    const merchants = getSimulatedMerchants();
+
     let results = [];
     if (rlsActive) {
-      if (selectedMerchantFilter === 'ALL') {
-        // Enforce RLS filter: JWT context can only view their own
-        results = [merchants[0]]; // Simulates query limited to Savannah Boutique context token!
-      } else {
-        const found = merchants.find(m => m.businessId === selectedMerchantFilter);
-        results = found ? [found] : [];
-      }
+      // Enforce RLS filter: JWT context can only view their own
+      const found = merchants.find(m => m.businessId === selectedMerchantFilter);
+      results = found ? [found] : [];
     } else {
       // Security leak! Shows EVERY business sales to any cashier on standard fetches
       results = merchants;
@@ -659,22 +688,37 @@ CREATE POLICY "Merchant Sales Isolation" ON public.sales
               </div>
 
               <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                Simulate pulling system business transactions. Under leaky mode, query pulls sales of ALL merchant registries across Kenya. Under active secure RLS mode, limits pulls strictly to Savannah Boutique's context.
+                Simulate pulling system business transactions. Under leaky mode, query pulls sales of ALL merchant registries across Kenya. Under active secure RLS mode, limits pulls strictly to the selected shop's context.
               </p>
 
               {/* simulated actions */}
-              <div className="flex flex-wrap items-center gap-3 bg-slate-50 dark:bg-slate-900/40 p-3 border border-border rounded-xl mb-4 text-xs">
-                <span className="font-bold text-slate-500 uppercase text-[10px]">Active Session Token:</span>
-                <span className="font-mono font-medium text-slate-600 bg-white dark:bg-slate-800 border border-border rounded-md px-2 py-0.5">
-                  Savannah Boutique Limited (b-merch-a)
-                </span>
+              <div className="flex flex-col sm:flex-row gap-3 bg-slate-50 dark:bg-slate-900/40 p-4 border border-border rounded-xl mb-4 text-xs">
+                <div className="flex-1 space-y-1">
+                  <span className="font-bold text-slate-500 uppercase text-[10px] block">Active Session Token (Select Shop Context):</span>
+                  <select
+                    value={selectedMerchantFilter}
+                    onChange={(e) => {
+                      setSelectedMerchantFilter(e.target.value);
+                      setSimulatedQueryLog([]);
+                    }}
+                    className="w-full text-xs font-semibold bg-white dark:bg-slate-800 border border-border rounded-md px-2 py-1.5 text-ink focus:outline-none"
+                  >
+                    {getSimulatedMerchants().map(m => (
+                      <option key={m.businessId} value={m.businessId}>
+                        {m.businessName} [{m.businessId.slice(0, 8)}]
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-                <button
-                  onClick={runRlsSimulation}
-                  className="ml-auto bg-brand hover:brightness-115 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition-colors uppercase tracking-wider"
-                >
-                  Execute Query
-                </button>
+                <div className="flex items-end">
+                  <button
+                    onClick={runRlsSimulation}
+                    className="w-full sm:w-auto bg-brand hover:brightness-115 text-white font-bold px-4 py-2 rounded-lg text-xs transition-colors uppercase tracking-wider whitespace-nowrap"
+                  >
+                    Execute Query
+                  </button>
+                </div>
               </div>
 
               {/* query result console */}
@@ -715,12 +759,12 @@ CREATE POLICY "Merchant Sales Isolation" ON public.sales
 
                 {rlsActive && simulatedQueryLog.length > 0 && (
                   <div className="text-[10px] bg-emerald-950/45 border border-emerald-900/60 p-2 rounded text-emerald-400 font-sans mt-3">
-                    ✔ Security shield verified: Amina Mohamed's (Eldoret) and Charles Kiprop's (Nakuru) sales rows were filtered out automatically at database layer. Data leakage prevented!
+                    ✔ Security shield verified: All other merchant/shop sales rows were filtered out automatically at postgres database layer. Data leakage prevented!
                   </div>
                 )}
                 {!rlsActive && simulatedQueryLog.length > 0 && (
                   <div className="text-[10px] bg-red-950/45 border border-red-900/60 p-2 rounded text-red-400 font-sans mt-3 animate-pulse">
-                    🚨 CRITICAL LEAK: The terminal pulled Eldoret and Nakuru transactions. Unauthorized competitors can intercept and steal competitive catalog financials. Turn on Row Level Security!
+                    🚨 CRITICAL LEAK: The terminal pulled transactions from ALL other merchant registries! Turn on Row Level Security to prevent unauthorized cross-border cross-merchant indexing!
                   </div>
                 )}
               </div>

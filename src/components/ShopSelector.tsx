@@ -30,8 +30,15 @@ export const ShopSelector: React.FC<ShopSelectorProps> = ({ business, onSelect, 
         const cacheKey = `dmi_license_cache_${key}`;
         const cached = localStorage.getItem(cacheKey);
         if (cached) {
-          const decrypted = JSON.parse(atob(cached));
-          return decrypted?.data?.plan_type || null;
+          try {
+            const decrypted = JSON.parse(atob(cached));
+            return decrypted?.data?.plan_type || null;
+          } catch (e) {
+            try {
+              const direct = JSON.parse(cached);
+              return direct?.data?.plan_type || null;
+            } catch (inner) {}
+          }
         }
       }
     } catch (e) {}
