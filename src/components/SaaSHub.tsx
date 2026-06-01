@@ -592,6 +592,96 @@ export const SaaSHub: React.FC = () => {
                   <p className="text-[10px] text-slate-400 mt-3 italic leading-relaxed">
                     This license key was successfully bound to {businessName} and allows setup of up to {selectedPlan === 'gold' ? 'Unlimited' : selectedPlan === 'silver' ? '3' : '1'} register nodes. Key was automatically delivered to {phone} via simulated SMS receipt.
                   </p>
+
+                  <div className="mt-4 pt-4 border-t border-border flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        // 1. Activate standard system
+                        await localDb.activate('8124');
+                        localStorage.setItem('dmi_pos_license_key', generatedKey);
+                        
+                        // 2. Cache the plan in localStorage
+                        const serialized = btoa(JSON.stringify({
+                          timestamp: new Date().toISOString(),
+                          gracePeriod: 7,
+                          data: {
+                            id: crypto.randomUUID(),
+                            license_key: generatedKey,
+                            client_name: businessName,
+                            status: 'ACTIVE',
+                            plan_type: selectedPlan.toUpperCase(),
+                            expires_at: null,
+                            payment_phone: phone,
+                            system_name: 'DMI MULTITENANT POS'
+                          }
+                        }));
+                        localStorage.setItem(`dmi_license_cache_${generatedKey}`, serialized);
+
+                        // 3. Create active Business Profile
+                        const createdBiz = await localDb.addBusiness({
+                          name: businessName,
+                          type: 'RETAIL',
+                          taxRate: 16,
+                          currency: 'KES',
+                          logo: '',
+                          phone: phone,
+                          email: `${ownerName.toLowerCase().replace(/\s+/g, '')}@example.com`,
+                          address: 'Nairobi, Kenya'
+                        });
+
+                        // 4. Create active Shop Profile
+                        const createdShop = await localDb.addShop({
+                          businessId: createdBiz.id,
+                          name: 'Main Branch',
+                          location: 'HQ Nairobi Office',
+                          phone: phone
+                        });
+
+                        // 5. Create or log in Manager under this active context
+                        const users = localDb.getUsers();
+                        const username = ownerName.toLowerCase().replace(/\s+/g, '') || 'manager';
+                        let matchedUser = users.find(u => u.username === username);
+                        if (!matchedUser) {
+                          matchedUser = {
+                            uid: crypto.randomUUID(),
+                            name: ownerName,
+                            username,
+                            email: `${username}@dmipos.internal`,
+                            role: 'admin',
+                            lastLogin: new Date().toISOString()
+                          };
+                          
+                          // Save back in users collection
+                          const updatedUsers = [...users, matchedUser];
+                          localStorage.setItem('dmi_pos_users', JSON.stringify(updatedUsers));
+                        }
+                        
+                        // Set current authenticated user
+                        localStorage.setItem('dmi_pos_auth_user', JSON.stringify(matchedUser));
+
+                        // 6. Set active business and shop context
+                        localStorage.setItem('dmi_pos_active_business_id', createdBiz.id);
+                        localStorage.setItem('dmi_pos_active_shop_id', createdShop.id);
+
+                        // Also update RLS simulator inputs to match new client details
+                        setManualClientName(businessName);
+                        setManualMerchantId(createdBiz.id.slice(0, 8));
+                        setManualCashierName(ownerName);
+
+                        // Notify the app about authorization shift and dispatch update
+                        window.dispatchEvent(new CustomEvent('auth-change'));
+                        window.dispatchEvent(new CustomEvent('local-db-update'));
+
+                        // 7. Force instant redirect to POS screen for this client!
+                        window.location.href = '/?tab=pos';
+                        window.location.reload();
+                      }}
+                      className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black py-2.5 rounded-xl text-xs uppercase tracking-wider transition-colors shadow-lg shadow-emerald-600/10 cursor-pointer"
+                    >
+                      <CheckCircle className="w-4 h-4 animate-bounce" /> Auto-Launch POS System for {businessName}
+                    </button>
+                  </div>
                 </motion.div>
               )}
             </div>
