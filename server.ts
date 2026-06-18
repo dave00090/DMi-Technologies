@@ -389,16 +389,20 @@ async function startServer() {
       fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
       
       if (supabaseClient) {
-        supabaseClient
-          .from('cloud_sync_state')
-          .upsert({ id: 'central_db', data: data, updated_at: new Date().toISOString() })
-          .then(({ error }) => {
+        (async () => {
+          try {
+            const { error } = await supabaseClient
+              .from('cloud_sync_state')
+              .upsert({ id: 'central_db', data: data, updated_at: new Date().toISOString() });
             if (error) {
-              console.error('Failed to auto-upsert cloud sync state to Supabase:', error.message);
+              console.warn('Failed to auto-upsert cloud sync state to Supabase (offline/no credentials):', error.message);
             } else {
               console.log('Successfully backed up cloud sync state to Supabase!');
             }
-          });
+          } catch (err: any) {
+            console.warn('Network issue: skipped auto-upsert to Supabase (fetch failed / offline mode):', err.message || err);
+          }
+        })();
       }
     } catch (err) {
       console.error('CRITICAL: Failed to write to cloud database:', err);
