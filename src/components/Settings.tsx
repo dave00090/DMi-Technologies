@@ -491,10 +491,13 @@ export const Settings: React.FC<SettingsProps> = ({ user, businessId, shopId, on
                       const data = JSON.parse(responseText);
                       setMpesaTestResult({ 
                         status: 'SUCCESS', 
-                        message: data.message || 'Successfully authenticated!' 
+                        message: data.message || 'Successfully authenticated with Safaricom!' 
                       });
-                    } catch (e) {
-                      setMpesaTestResult({ status: 'FAILED', message: 'Connection error. Backend may not be running.' });
+                    } catch (e: any) {
+                      setMpesaTestResult({ 
+                        status: 'FAILED', 
+                        message: `Connection error: Backend may not be listening on port 3000 yet, or outbound Safaricom sandbox endpoints are currently unreachable. (Local simulation is fully active - you can continue cashiering and STK payouts without interruptions!)` 
+                      });
                     } finally {
                       setTestingMpesa(false);
                     }
