@@ -29,7 +29,8 @@ import {
   XCircle,
   History,
   AlertCircle,
-  Clock
+  Clock,
+  ExternalLink
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Receipt } from './Receipt';
@@ -41,7 +42,8 @@ import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { SafeImage } from './SafeImage';
 import { printElement } from '../lib/printUtils';
 
-import { getLocal, setLocal, removeLocal } from '../services/localDb';
+import { getLocal, setLocal, removeLocal, localDb } from '../services/localDb';
+import { supabase } from '../services/masterService';
 import { syncService } from '../services/syncService';
 
 interface POSProps {
@@ -470,7 +472,7 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
     if (isSyncingState) return;
     setIsSyncingState(true);
     setSuccess("Syncing terminal session with cloud database...");
-    const result = await syncService.syncNow();
+    const result = await syncService.syncNow(true);
     setIsSyncingState(false);
     if (result) {
       setSuccess("Database sync completed. Station is live.");
@@ -1303,6 +1305,30 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
             </div>
             
             <div className="flex-1 overflow-y-auto p-8 bg-bg/50" id="print-receipt-container">
+              {/* Device-agnostic Web Print Preview Fallback */}
+              <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl mb-6 text-left">
+                <div className="flex items-start gap-3">
+                  <Printer className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-bold text-ink text-xs uppercase tracking-wider">Device-Agnostic Print Layout</p>
+                    <p className="text-muted text-[11px] leading-relaxed">
+                      Printing on a phone, tablet, or experiencing blank iframe previews? Open the print stream in a new tab for native, high-fidelity system printing.
+                    </p>
+                    <div className="pt-2">
+                      <a 
+                        href={`/?printSaleId=${lastSale.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-700 dark:text-amber-400 font-bold rounded-lg text-[10px] uppercase tracking-wider transition-all pointer-events-auto"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        Live Print Preview (New Tab)
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div id="print-receipt" className="bg-white shadow-sm rounded-2xl overflow-hidden mb-6">
                 <Receipt ref={receiptRef} sale={lastSale} businessProfile={businessProfile!} />
               </div>
@@ -1521,8 +1547,89 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
                       <p className="text-xs text-emerald-500 font-bold">● Connected (RJ11 Kick)</p>
                     </div>
                     <button
-                      onClick={() => {
-                        setSuccess("KICK SIGNAL SENT! Cash drawer triggered open.");
+                      onClick={async () => {
+                        try {
+                          // 1. Record transaction locally via alerts/audit logs
+                          await localDb.addAlert({
+                            businessId,
+                            shopId,
+                            type: 'CASH_DRAWER_OPEN',
+                            message: `CASH DRAWER OPENED: Manual kick triggered by user "${user.name}" (${user.role.toUpperCase()})`,
+                            status: 'UNREAD',
+                            timestamp: new Date().toISOString(),
+                            details: {
+                              userId: user.uid,
+                              userName: user.name,
+                              role: user.role,
+                              action: 'MANUAL_KICK'
+                            }
+                          });
+
+                          // 2. Centrally report manual keyless kick open attempts to licensing database
+                          try {
+                            const licenseKey = localStorage.getItem('dmi_pos_license_key') || 'MASTER_DEMO_KEY';
+                            let cachedLicenseId: string | null = null;
+                            try {
+                              const cacheRaw = localStorage.getItem(`dmi_license_cache_${licenseKey}`);
+                              if (cacheRaw) {
+                                const parsed = JSON.parse(atob(cacheRaw));
+                                cachedLicenseId = parsed?.data?.id || null;
+                              }
+                            } catch (e) {}
+
+                            const alertPayload = {
+                              id: crypto.randomUUID(),
+                              business_id: businessId,
+                              license_key: licenseKey,
+                              alert_type: 'CASH_DRAWER_KICK',
+                              message: `Cash Drawer manual keyless kick open by user "${user.name}" (${user.role.toUpperCase()})`,
+                              triggered_by: user.name,
+                              machine_id: btoa(navigator.userAgent).slice(0, 32),
+                              license_id: cachedLicenseId,
+                              metadata: {
+                                userId: user.uid,
+                                userName: user.name,
+                                role: user.role,
+                                action: 'MANUAL_KICK',
+                                businessId,
+                                licenseKey,
+                                alertType: 'CASH_DRAWER_KICK',
+                                triggeredBy: user.name,
+                                machineId: btoa(navigator.userAgent).slice(0, 32)
+                              }
+                            };
+
+                            const { error: piracyError } = await supabase.from('piracy_alerts').insert([alertPayload]);
+                            
+                            if (piracyError && (
+                              piracyError.code === '42703' || 
+                              piracyError.message?.includes('column') || 
+                              piracyError.message?.toLowerCase().includes('does not exist')
+                            )) {
+                              // Safe fallback: insert with only original compatible schema columns
+                              const fallbackPayload = {
+                                id: alertPayload.id,
+                                license_id: cachedLicenseId,
+                                message: alertPayload.message,
+                                metadata: alertPayload.metadata,
+                                timestamp: new Date().toISOString()
+                              };
+                              const { error: fallbackError } = await supabase.from('piracy_alerts').insert([fallbackPayload]);
+                              if (fallbackError) console.warn('Supabase fallback drawer log failed:', fallbackError.message);
+                            } else if (piracyError) {
+                              console.warn('Supabase drawer log warning:', piracyError.message);
+                            }
+                          } catch (se) {
+                            // Offline or sandboxed bypass
+                          }
+                          
+                          // Dispatch local db update event
+                          window.dispatchEvent(new CustomEvent('local-db-update', { detail: { key: 'dmi_pos_alerts' } }));
+                        } catch (err) {
+                          console.error('Failed to log cash drawer event:', err);
+                        }
+
+                        setSuccess("KICK SIGNAL SENT! Cash drawer triggered open and recorded.");
                         setTimeout(() => setSuccess(null), 3000);
                       }}
                       className="px-3.5 py-2 bg-white border border-border hover:bg-muted text-ink font-bold text-xs rounded-xl shadow-sm transition-all uppercase tracking-wider"

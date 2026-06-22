@@ -36,6 +36,7 @@ import { masterService, supabase } from './services/masterService';
 import { InvoicesTab } from './components/InvoicesTab';
 import { GuestDeskPanel } from './components/GuestDeskPanel';
 import { GuestPortal } from './components/GuestPortalView';
+import { StandalonePrintPage } from './components/StandalonePrintPage';
 
 import { UserCheck, HeartHandshake } from 'lucide-react';
 
@@ -533,8 +534,13 @@ export default function App() {
   };
 
   const mainView = () => {
-    // Direct QR scanning guest bypass mode
+    // Standalone print check
     const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('printSaleId')) {
+      return <StandalonePrintPage saleId={urlParams.get('printSaleId')!} />;
+    }
+
+    // Direct QR scanning guest bypass mode
     if (urlParams.get('mode') === 'guest') {
       const guestBizId = urlParams.get('businessId');
       const guestShId = urlParams.get('shopId');

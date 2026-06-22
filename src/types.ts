@@ -55,7 +55,7 @@ export interface Shop {
 export type Role = 'admin' | 'staff' | 'manager' | 'hr';
 export type PaymentMethod = 'CASH' | 'MPESA' | 'CARD' | 'DEBT';
 export type SaleStatus = 'COMPLETED' | 'PENDING_PAYMENT' | 'FAILED_PAYMENT' | 'CANCELLED';
-export type AlertType = 'PRICE_OVERRIDE' | 'LOW_STOCK' | 'EXPIRY_WARNING' | 'DEBT_OVERDUE';
+export type AlertType = 'PRICE_OVERRIDE' | 'LOW_STOCK' | 'EXPIRY_WARNING' | 'DEBT_OVERDUE' | 'CASH_DRAWER_KICK' | 'CASH_DRAWER_OPEN';
 export type AlertStatus = 'UNREAD' | 'READ';
 
 export interface Supplier {

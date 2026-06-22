@@ -30,6 +30,7 @@ import { motion } from 'motion/react';
 import { format } from 'date-fns';
 import { supabase, License, masterService } from '../services/masterService';
 import { SaaSHub } from './SaaSHub';
+import { MasterDatabaseSchema } from './MasterDatabaseSchema';
 
 interface MasterAdminProps {
   onLogout: () => void;
@@ -47,7 +48,7 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
     onlineStaff: 0
   });
   const [isLoading, setIsLoading] = useState(true);
-  const [view, setView] = useState<'dashboard' | 'licenses' | 'security' | 'pricing' | 'saas-hub'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'licenses' | 'security' | 'pricing' | 'saas-hub' | 'database'>('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   const [networkStatus, setNetworkStatus] = useState<'online' | 'offline'>('online');
 
@@ -473,6 +474,13 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
           >
             <Laptop className="w-4 h-4" />
             SaaS Developer Hub
+          </button>
+          <button 
+            onClick={() => setView('database')}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${view === 'database' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}
+          >
+            <Database className="w-4 h-4" />
+            SQL Schema
           </button>
         </nav>
 
@@ -1473,6 +1481,10 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
 
           {view === 'saas-hub' && (
             <SaaSHub />
+          )}
+
+          {view === 'database' && (
+            <MasterDatabaseSchema />
           )}
 
         </div>

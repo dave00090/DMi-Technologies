@@ -23,16 +23,15 @@ export const printElement = (elementId: string, isReceipt = true): boolean => {
   const iframe = document.createElement('iframe');
   iframe.id = 'print-iframe-temp';
   
-  // Set styles to keep it invisible but present in layout
+  // Set styles to keep it offscreen but with proper layout boundaries for the browser print engine
   Object.assign(iframe.style, {
-    position: 'fixed',
-    right: '0',
-    bottom: '0',
-    width: '0',
-    height: '0',
+    position: 'absolute',
+    left: '-9999px',
+    top: '-9999px',
+    width: '450px',
+    height: '800px',
     border: '0',
     zIndex: '-9999',
-    opacity: '0',
     pointerEvents: 'none'
   });
 
@@ -61,19 +60,25 @@ export const printElement = (elementId: string, isReceipt = true): boolean => {
       @page {
         margin: ${isReceipt ? '0' : '15mm'} !important;
       }
-      body {
-        margin: 0 !important;
-        padding: ${isReceipt ? '0' : '10px'} !important;
+      
+      /* Bulletproof visibility forcing: prevents any legacy print-hiding classes in cloned parent styles from hiding the iframe contents */
+      html, body, body.printing-receipt, body.printing-report, .printing-receipt, .printing-report {
+        visibility: visible !important;
+        display: block !important;
+        opacity: 1 !important;
         background: white !important;
         color: black !important;
+        margin: 0 !important;
+        padding: ${isReceipt ? '0' : '10px'} !important;
         font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
       }
       
       /* Ensure everything inside the print iframe is visible by default to override global parent document overrides */
-      body, body * {
+      body, body *, html *, body.printing-receipt *, body.printing-report * {
         visibility: visible !important;
+        opacity: 1 !important;
       }
 
       /* Explicitly hide non-printable UI elements */
