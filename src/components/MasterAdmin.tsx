@@ -39,6 +39,7 @@ interface MasterAdminProps {
 export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
   const [licenses, setLicenses] = useState<License[]>([]);
   const [recentSales, setRecentSales] = useState<any[]>([]);
+  const [piracyAlerts, setPiracyAlerts] = useState<any[]>([]);
   const [stats, setStats] = useState({ 
     totalClients: 0, 
     activeClients: 0, 
@@ -81,9 +82,18 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
       })
       .subscribe();
 
+    // Real-time subscription for piracy alerts
+    const alertsSubscription = supabase
+      .channel('master-piracy-alerts')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'piracy_alerts' }, () => {
+        fetchData();
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(licenseSubscription);
       supabase.removeChannel(salesSubscription);
+      supabase.removeChannel(alertsSubscription);
     };
   }, []);
 
@@ -197,13 +207,22 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
         health.push({ table: 'login_history', status: 'missing' });
       }
 
-      // 4. Piracy Alerts Health
+      // 4. Piracy Alerts Health & Fetch
+      let alertsList: any[] = [];
       try {
-        const { error: alertError } = await supabase.from('piracy_alerts').select('id').limit(1);
+        const { data: alertData, error: alertError } = await supabase
+          .from('piracy_alerts')
+          .select('*')
+          .order('timestamp', { ascending: false });
+        
         health.push({ table: 'piracy_alerts', status: (alertError && alertError.message.includes('not found')) ? 'missing' : 'ok' });
+        if (alertData) {
+          alertsList = alertData;
+        }
       } catch (e) {
         health.push({ table: 'piracy_alerts', status: 'missing' });
       }
+      setPiracyAlerts(alertsList);
       
       setDbHealth(health);
       
@@ -402,6 +421,50 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
     if (confirm) {
       const bypassCode = Math.floor(1000 + Math.random() * 9000).toString();
       alert(`MASTER BYPASS CODE GENERATED: ${bypassCode}\n\nInstruct the client to enter this code in their PIN prompt. It will reset their local admin PIN.`);
+    }
+  };
+
+  const handleDismissAlert = async (alertId: string) => {
+    const confirm = window.confirm('Are you sure you want to dismiss and delete this security alert log?');
+    if (!confirm) return;
+    try {
+      const { error } = await supabase.from('piracy_alerts').delete().eq('id', alertId);
+      if (error) alert('Failed to dismiss alert: ' + error.message);
+      else {
+        fetchData();
+      }
+    } catch (e: any) {
+      alert('Error dismissing alert: ' + e.message);
+    }
+  };
+
+  const handleResetHardwareLock = async (licenseId: string, clientName: string) => {
+    const confirm = window.confirm(`LEGITIMATE RE-ACTIVATION: Clear hardware signature lock for ${clientName || 'this license'}? They will be able to lock onto a new computer/motherboard on next boot.`);
+    if (!confirm) return;
+    try {
+      const { error } = await supabase.from('licenses').update({ machine_id: null, status: 'ACTIVE' }).eq('id', licenseId);
+      if (error) alert('Failed to reset hardware lock: ' + error.message);
+      else {
+        alert('SUCCESS: Hardware lock cleared! The next device they boot will register as their primary device.');
+        fetchData();
+      }
+    } catch (e: any) {
+      alert('Error resetting lock: ' + e.message);
+    }
+  };
+
+  const handleLockLicense = async (licenseId: string, clientName: string) => {
+    const confirm = window.confirm(`DANGER - REMOTE LOCKOUT: Instantly revoke and lock license for ${clientName || 'this license'}? This will lock their system screen remotely, halting all local operations.`);
+    if (!confirm) return;
+    try {
+      const { error } = await supabase.from('licenses').update({ status: 'LOCKED' }).eq('id', licenseId);
+      if (error) alert('Failed to lock license: ' + error.message);
+      else {
+        alert('SUCCESS: Client license is now locked on the cloud network.');
+        fetchData();
+      }
+    } catch (e: any) {
+      alert('Error locking license: ' + e.message);
     }
   };
 
@@ -991,6 +1054,120 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                      </div>
                    </div>
                  </div>
+              </motion.div>
+
+              {/* Real-Time watchdog alerts */}
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-slate-900 border border-slate-800 rounded-3xl p-8"
+              >
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-rose-500/10 text-rose-500 rounded-xl flex items-center justify-center">
+                      <ShieldAlert className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black uppercase tracking-tight">Watchdog Alert Stream</h3>
+                      <p className="text-xs text-slate-500 uppercase tracking-widest font-bold mt-0.5">Real-time alerts from active standalone PC client softwares</p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-black bg-rose-500/20 text-rose-400 border border-rose-500/30 px-3 py-1 rounded-full uppercase tracking-widest animate-pulse">
+                    ● Watchdog Live
+                  </span>
+                </div>
+
+                {piracyAlerts.length === 0 ? (
+                  <div className="text-center py-10 bg-slate-950/40 border border-slate-800/80 rounded-2xl p-6">
+                    <div className="w-12 h-12 bg-emerald-500/10 text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <CheckCircle className="w-6 h-6" />
+                    </div>
+                    <p className="text-sm font-black text-slate-200 uppercase tracking-wide">All Systems Nominal</p>
+                    <p className="text-xs text-slate-500 mt-1">No anti-copying triggers or hardware signatures mismatch detected.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
+                    {piracyAlerts.map((alert) => {
+                      const associatedLicense = licenses.find(l => l.id === alert.license_id);
+                      const isApproval = alert.message?.includes('🟢');
+                      
+                      return (
+                        <div 
+                          key={alert.id} 
+                          className={`p-5 bg-slate-950/80 border rounded-2xl transition-all ${
+                            isApproval 
+                              ? 'border-emerald-500/20 hover:border-emerald-500/40 border-l-4 border-l-emerald-500' 
+                              : 'border-rose-500/20 hover:border-rose-500/40 border-l-4 border-l-rose-500'
+                          }`}
+                        >
+                          <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                            <div className="space-y-2 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md ${
+                                  isApproval ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
+                                }`}>
+                                  {isApproval ? 'SYSTEM EVENT' : 'SECURITY BREACH'}
+                                </span>
+                                <span className="text-xs font-bold text-slate-400">
+                                  {alert.timestamp ? format(new Date(alert.timestamp), 'MMM dd, yyyy HH:mm:ss') : 'Unknown Time'}
+                                </span>
+                                {associatedLicense && (
+                                  <span className="text-[10px] font-black uppercase bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-md">
+                                    Client: {associatedLicense.client_name}
+                                  </span>
+                                )}
+                              </div>
+
+                              <p className="text-sm text-slate-200 font-medium leading-relaxed">
+                                {alert.message}
+                              </p>
+
+                              {alert.metadata && (
+                                <div className="p-3 bg-slate-900/60 rounded-xl space-y-1 text-[11px] text-slate-400 font-mono border border-slate-800/40">
+                                  <div className="flex gap-2">
+                                    <span className="text-slate-600 font-bold">HOSTNAME:</span>
+                                    <span>{alert.metadata.hostname || 'Unknown'}</span>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <span className="text-slate-600 font-bold">CONTEXT:</span>
+                                    <span className="truncate max-w-xl">{alert.metadata.userAgent || 'Unknown Agent'}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex md:flex-col gap-2 self-end md:self-start">
+                              {!isApproval && (
+                                <>
+                                  <button
+                                    onClick={() => handleResetHardwareLock(alert.license_id, associatedLicense?.client_name || '')}
+                                    className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white text-[10px] font-black uppercase tracking-wider rounded-lg border border-indigo-500/20 transition-all"
+                                    title="Authorizes client onto their new machine, resetting lock."
+                                  >
+                                    Re-Bind Device
+                                  </button>
+                                  <button
+                                    onClick={() => handleLockLicense(alert.license_id, associatedLicense?.client_name || '')}
+                                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black uppercase tracking-wider rounded-lg transition-all"
+                                    title="Locks the client system remotely."
+                                  >
+                                    Lock License
+                                  </button>
+                                </>
+                              )}
+                              <button
+                                onClick={() => handleDismissAlert(alert.id)}
+                                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-slate-100 text-[10px] font-black uppercase tracking-wider rounded-lg border border-slate-700 transition-all"
+                              >
+                                Dismiss
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </motion.div>
 
               <motion.div 

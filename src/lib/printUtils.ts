@@ -61,55 +61,69 @@ export const printElement = (elementId: string, isReceipt = true): boolean => {
         margin: ${isReceipt ? '0' : '15mm'} !important;
       }
       
-      /* Bulletproof visibility forcing: prevents any legacy print-hiding classes in cloned parent styles from hiding the iframe contents */
-      html, body, body.printing-receipt, body.printing-report, .printing-receipt, .printing-report {
-        visibility: visible !important;
-        display: block !important;
-        opacity: 1 !important;
-        background: white !important;
-        color: black !important;
-        margin: 0 !important;
-        padding: ${isReceipt ? '0' : '10px'} !important;
-        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
-        -webkit-print-color-adjust: exact !important;
-        print-color-adjust: exact !important;
-      }
-      
-      /* Ensure everything inside the print iframe is visible by default to override global parent document overrides */
-      body, body *, html *, body.printing-receipt *, body.printing-report * {
-        visibility: visible !important;
-        opacity: 1 !important;
+      @media print {
+        /* Bulletproof visibility forcing: prevents any legacy print-hiding classes in cloned parent styles from hiding the iframe contents */
+        html, body, body.printing-receipt, body.printing-report, .printing-receipt, .printing-report {
+          visibility: visible !important;
+          display: block !important;
+          opacity: 1 !important;
+          background: white !important;
+          color: black !important;
+          margin: 0 !important;
+          padding: ${isReceipt ? '0' : '10px'} !important;
+          font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        
+        /* Ensure everything inside the print iframe is visible by default to override global parent document overrides */
+        body, body *, html *, body.printing-receipt *, body.printing-report * {
+          visibility: visible !important;
+          opacity: 1 !important;
+        }
+
+        /* Target the specific printed element directly to guarantee visibility */
+        #${elementId}, #${elementId} * {
+          visibility: visible !important;
+          opacity: 1 !important;
+        }
+  
+        /* Explicitly hide non-printable UI elements */
+        .print\\:hidden, aside, header, nav, button, .no-print, [role="button"], .no-print *, .print\\:hidden * {
+          display: none !important;
+          visibility: hidden !important;
+        }
+        
+        /* Receipt Mode: enforce structured receipt centering and limits */
+        ${isReceipt ? `
+        #print-receipt, .receipt-font, .receipt-font * {
+          font-family: inherit !important;
+        }
+        #print-receipt {
+          display: block !important;
+          visibility: visible !important;
+          width: 100% !important;
+          max-width: 400px !important;
+          margin: 0 auto !important;
+          box-shadow: none !important;
+          border: none !important;
+          animation: none !important;
+          transition: none !important;
+          transform: none !important;
+        }
+        ` : `
+        /* Report mode overrides: ensure everything is visible, table layout is pristine */
+        * {
+          visibility: visible !important;
+        }
+        `}
       }
 
-      /* Explicitly hide non-printable UI elements */
-      .print\\:hidden, aside, header, nav, button, .no-print, [role="button"], .no-print *, .print\\:hidden * {
-        display: none !important;
-        visibility: hidden !important;
+      /* Basic styling for non-printing context (if viewed inside browser tab directly) */
+      html, body {
+        background: white;
+        color: black;
       }
-      
-      /* Receipt Mode: enforce structured receipt centering and limits */
-      ${isReceipt ? `
-      #print-receipt, .receipt-font, .receipt-font * {
-        font-family: inherit !important;
-      }
-      #print-receipt {
-        display: block !important;
-        visibility: visible !important;
-        width: 100% !important;
-        max-width: 400px !important;
-        margin: 0 auto !important;
-        box-shadow: none !important;
-        border: none !important;
-        animation: none !important;
-        transition: none !important;
-        transform: none !important;
-      }
-      ` : `
-      /* Report mode overrides: ensure everything is visible, table layout is pristine */
-      * {
-        visibility: visible !important;
-      }
-      `}
     </style>
   `);
 

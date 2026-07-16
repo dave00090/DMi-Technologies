@@ -73,8 +73,8 @@ body {
 }
 
 @media print {
-  /* Default: Hide everything on print */
-  body * {
+  /* Default: Hide everything on print, except when printing inside dedicated printing frames */
+  body:not(.printing-receipt):not(.printing-report) * {
     visibility: hidden !important;
   }
   

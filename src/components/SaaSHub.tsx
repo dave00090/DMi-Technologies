@@ -22,11 +22,15 @@ import {
   Barcode,
   Tv,
   Check,
-  AlertTriangle
+  AlertTriangle,
+  Download,
+  Trash2,
+  Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../services/masterService';
 import { localDb } from '../services/localDb';
+import { backupEngine, BackupRecord } from '../services/backupEngine';
 
 export const SaaSHub: React.FC = () => {
   const [activeStep, setActiveStep] = useState<'onboarding' | 'multi-tenancy' | 'encryption' | 'resolution' | 'packaging'>('onboarding');
@@ -72,10 +76,27 @@ export const SaaSHub: React.FC = () => {
   const [hardwareLog, setHardwareLog] = useState<string[]>([]);
   const [isKioskMode, setIsKioskMode] = useState(false);
 
+  // 6. Automated Backup & Retention State
+  const [backupsList, setBackupsList] = useState<BackupRecord[]>(() => backupEngine.getBackups());
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [lastBackupTime, setLastBackupTime] = useState(() => localStorage.getItem('dmi_pos_last_backup_time'));
+  const [isPurging, setIsPurging] = useState(false);
+  const [purgeResult, setPurgeResult] = useState<{ purgedCount: number; tablesAffected: string[] } | null>(null);
+  const [simulateOldRecords, setSimulateOldRecords] = useState(false);
+
   // Auto-load client details if they exist
   useEffect(() => {
     const savedPin = localStorage.getItem('dmi_pos_encryption_pin');
     if (savedPin) setEncryptionPin(savedPin);
+
+    const handleBackupComplete = (e: any) => {
+      setBackupsList(backupEngine.getBackups());
+      setLastBackupTime(localStorage.getItem('dmi_pos_last_backup_time'));
+    };
+    window.addEventListener('dmi-backup-completed', handleBackupComplete);
+    return () => {
+      window.removeEventListener('dmi-backup-completed', handleBackupComplete);
+    };
   }, []);
 
   // Sync Encryption Config to LocalStorage
@@ -1142,88 +1163,326 @@ CREATE POLICY "Merchant Sales Isolation" ON public.sales
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -15 }}
             transition={{ duration: 0.3 }}
-            className="grid grid-cols-1 lg:grid-cols-12 gap-8"
+            className="space-y-8"
           >
-            {/* Tauri and Electron guides */}
-            <div className="lg:col-span-6 bg-card border border-border rounded-xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-ink mb-1.5 flex items-center gap-2">
-                <FileCode className="w-5 h-5 text-brand" /> Desktop Application Compilations (.EXE / .DMG)
-              </h2>
-              <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-                Compile standard React source bundles inside fully native kiosk shells, blocking keyboard focus locks and capturing barcode lasers or thermal receipt printers directly.
-              </p>
+            {/* Top Row: Build PC Software Info & Local DB Alternatives */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              {/* Build Instructions */}
+              <div className="lg:col-span-7 bg-card border border-border rounded-xl p-6 shadow-sm">
+                <h2 className="text-lg font-bold text-ink mb-1.5 flex items-center gap-2">
+                  <FileCode className="w-5 h-5 text-brand" /> How to Build DMi POS into a Downloadable PC Software
+                </h2>
+                <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                  To turn this React client-first application into a lightweight, downloadable <code className="font-mono text-[10px] bg-slate-100 px-1 py-0.5 rounded">.EXE</code> (Windows) or <code className="font-mono text-[10px] bg-slate-100 px-1 py-0.5 rounded">.DMG</code> (Mac) software, you can wrap the code inside a native desktop container.
+                </p>
 
-              <div className="space-y-4">
-                <div className="border border-border rounded-xl p-4 bg-slate-50 dark:bg-slate-900/10">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-ink uppercase">Capacitor Android Build</span>
-                    <span className="text-[9px] font-black uppercase text-brand bg-brand/10 px-2 rounded">Android Tablet</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="border border-border rounded-xl p-4 bg-slate-50 dark:bg-slate-900/10">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-ink uppercase">Option A: Tauri (Recommended)</span>
+                      <span className="text-[9px] font-black uppercase text-emerald-500 bg-emerald-50 px-2 rounded">Lightweight</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mb-2 leading-relaxed">
+                      Written in Rust. Tauri compiles the application down to just <strong>8MB to 12MB</strong>. It has direct access to the computer's local filesystems and native SQLite storage.
+                    </p>
+                    <pre className="bg-[#1f1f1f] text-[10px] text-zinc-300 font-mono p-3 rounded-lg overflow-x-auto">
+{`# 1. Install Tauri CLI
+npm install @tauri-apps/cli -D
+
+# 2. Initialize Tauri bundle
+npx tauri init
+
+# 3. Compile native .EXE or .DMG
+npx tauri build`}
+                    </pre>
                   </div>
-                  <pre className="bg-[#1f1f1f] text-[10px] text-zinc-300 font-mono p-3 rounded-lg overflow-x-auto">
-{`npm run android:init
-npm run android:sync
-npm run android:open // launches Android studio`}
-                  </pre>
+
+                  <div className="border border-border rounded-xl p-4 bg-slate-50 dark:bg-slate-900/10">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-ink uppercase">Option B: Electron</span>
+                      <span className="text-[9px] font-black uppercase text-blue-500 bg-blue-50 px-2 rounded">Flexible</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mb-2 leading-relaxed">
+                      Built with Node.js. Electron is highly stable and provides custom printer direct hooks (<code className="font-mono text-[10.5px]">webContents.print()</code>) and offline-first filesystem utilities.
+                    </p>
+                    <pre className="bg-[#1f1f1f] text-[10px] text-zinc-300 font-mono p-3 rounded-lg overflow-x-auto">
+{`# 1. Start Electron Hot Reload
+npm run electron:dev
+
+# 2. Build installer (.msi / .dmg)
+npm run electron:build`}
+                    </pre>
+                  </div>
+                </div>
+              </div>
+
+              {/* Database Alternatives */}
+              <div className="lg:col-span-5 bg-card border border-border rounded-xl p-6 shadow-sm flex flex-col justify-between">
+                <div>
+                  <h3 className="text-md font-bold text-ink mb-1.5 flex items-center gap-2">
+                    <Database className="w-4.5 h-4.5 text-brand" /> Offline PC Database Alternatives (Non-Supabase)
+                  </h3>
+                  <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                    While Supabase is the ultimate cloud backend, for fully offline downloadable PC softwares, you should utilize embedded local databases that store everything on the user's local hard drive:
+                  </p>
+
+                  <div className="space-y-3">
+                    <div className="border-l-2 border-brand/50 pl-3 py-0.5">
+                      <div className="text-xs font-bold text-ink">1. SQLite Database (The Industry Standard)</div>
+                      <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                        A single binary file stored directly inside the user's PC (e.g. in <code className="font-mono text-[10px] bg-slate-50 dark:bg-slate-900 px-1">C:/Users/[User]/DMi_POS.db</code>). Fast, requires zero configuration, can be encrypted using SQLCipher, and does not need any internet!
+                      </p>
+                    </div>
+
+                    <div className="border-l-2 border-emerald-500/50 pl-3 py-0.5">
+                      <div className="text-xs font-bold text-ink">2. RxDB (Reactive Client-Side DB)</div>
+                      <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                        An offline-first, reactive database for JavaScript. It synchronizes automatically with external servers when connection is restored and stores data locally in IndexedDB or SQLite.
+                      </p>
+                    </div>
+
+                    <div className="border-l-2 border-amber-500/50 pl-3 py-0.5">
+                      <div className="text-xs font-bold text-ink">3. WatermelonDB</div>
+                      <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                        High-performance local database engine optimized for rendering hundreds of products or transactions instantly on the PC.
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="border border-border rounded-xl p-4 bg-slate-50 dark:bg-slate-900/10">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-ink uppercase">Electron desktop installer bundle</span>
-                    <span className="text-[9px] font-black uppercase text-white bg-neutral-800 px-2 rounded">Windows & MacOS</span>
-                  </div>
-                  <pre className="bg-[#1f1f1f] text-[10px] text-zinc-300 font-mono p-3 rounded-lg overflow-x-auto">
-{`npm run electron:dev   // hot reload launcher
-npm run electron:build // builds .msi / .exe installable`}
-                  </pre>
+                <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-500/20 rounded-lg p-3 text-[11px] text-amber-600 dark:text-amber-400 leading-relaxed mt-4">
+                  💡 <strong>Your Current App is Ready!</strong> We currently use IndexedDB with custom crypto cipher PIN encryption at rest. All data persists offline in your browser!
                 </div>
               </div>
             </div>
 
-            {/* Direct WebUSB Print scan test board */}
-            <div className="lg:col-span-6 bg-card border border-border rounded-xl p-6 shadow-sm flex flex-col justify-between">
-              <div>
-                <h3 className="text-md font-bold text-ink mb-1.5 flex items-center gap-2">
-                  <Maximize2 className="w-4.5 h-4.5 text-brand" /> POS Hardware Printer & Barcode Gateways
-                </h3>
-                <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                  Interact with real hardware testing hooks. Trigger simulated laser checks and test printing receipts directly from the web sandbox wrapper frames.
-                </p>
+            {/* Bottom Row: Local Backup Sandbox & Hardware Bridge */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              {/* Automated Backups Control Panel */}
+              <div className="lg:col-span-7 bg-card border border-border rounded-xl p-6 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 border-b border-border pb-3 gap-2">
+                  <div>
+                    <h3 className="text-md font-bold text-ink flex items-center gap-2">
+                      <Clock className="w-5 h-5 text-brand" /> Automated 24h Local Backups & 3-Year Retention Policies
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Auto-backup scheduler and automated vacuum cleans are integrated into the boot cycle.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 self-start">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-[10px] font-black uppercase text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">
+                      scheduler active
+                    </span>
+                  </div>
+                </div>
 
-                {/* Hardware controls */}
-                <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  {/* Status indicators */}
+                  <div className="bg-slate-50 dark:bg-slate-900/40 border border-border rounded-xl p-3 text-center">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Last Automated Backup</span>
+                    <span className="text-xs font-bold font-mono text-ink block">
+                      {lastBackupTime ? new Date(lastBackupTime).toLocaleDateString() : 'Awaiting Check'}
+                    </span>
+                    <span className="text-[9px] text-slate-400">
+                      {lastBackupTime ? new Date(lastBackupTime).toLocaleTimeString() : 'Never'}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-50 dark:bg-slate-900/40 border border-border rounded-xl p-3 text-center">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Backup Name Target</span>
+                    <span className="text-xs font-black text-brand block">DMi POS</span>
+                    <span className="text-[9px] text-slate-400 font-mono">
+                      with dynamic time & date
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-50 dark:bg-slate-900/40 border border-border rounded-xl p-3 text-center">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Retention Expiry</span>
+                    <span className="text-xs font-bold text-red-500 block">3 Years Limit</span>
+                    <span className="text-[9px] text-slate-400 leading-none">
+                      Older entries auto-purged
+                    </span>
+                  </div>
+                </div>
+
+                {/* Simulated database action buttons */}
+                <div className="flex flex-wrap gap-2.5 mb-4">
                   <button
-                    onClick={() => triggerHardwareBridge('print')}
-                    className="p-3 border border-border hover:border-brand bg-slate-50 dark:bg-slate-900/40 hover:bg-brand/5 rounded-xl flex flex-col items-center justify-center text-center transition-all group gap-2"
+                    onClick={async () => {
+                      setIsBackingUp(true);
+                      await new Promise(r => setTimeout(r, 800));
+                      const res = await backupEngine.triggerBackupDownload(true);
+                      setIsBackingUp(false);
+                    }}
+                    disabled={isBackingUp}
+                    className="flex-1 min-w-[200px] flex items-center justify-center gap-2 bg-brand hover:brightness-110 text-white font-bold py-2.5 px-4 rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-50"
                   >
-                    <Printer className="w-6 h-6 text-slate-400 group-hover:text-brand transition-colors" />
-                    <span className="text-xs font-bold text-ink">Print Test Receipt</span>
-                    <span className="text-[9px] text-slate-400">Handshake Epson/Star ESC/POS</span>
+                    <Download className={`w-4 h-4 ${isBackingUp ? 'animate-spin' : ''}`} />
+                    {isBackingUp ? 'Compiling local database...' : 'Download Manual Backup (.JSON)'}
                   </button>
 
                   <button
-                    onClick={() => triggerHardwareBridge('scan')}
-                    className="p-3 border border-border hover:border-brand bg-slate-50 dark:bg-slate-900/40 hover:bg-brand/5 rounded-xl flex flex-col items-center justify-center text-center transition-all group gap-2"
+                    onClick={async () => {
+                      setIsPurging(true);
+                      setPurgeResult(null);
+                      await new Promise(r => setTimeout(r, 800));
+                      const res = await backupEngine.purgeDataOlderThanThreeYears();
+                      setPurgeResult(res);
+                      setIsPurging(false);
+                    }}
+                    disabled={isPurging}
+                    className="flex-1 min-w-[200px] flex items-center justify-center gap-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold py-2.5 px-4 rounded-xl text-xs uppercase tracking-wider transition-all border border-neutral-250 disabled:opacity-50"
                   >
-                    <Barcode className="w-6 h-6 text-slate-400 group-hover:text-brand transition-colors" />
-                    <span className="text-xs font-bold text-ink">Beam Laser Scan</span>
-                    <span className="text-[9px] text-slate-400">Emulate physical reader inputs</span>
+                    <Trash2 className="w-4 h-4 text-red-500" />
+                    {isPurging ? 'Scanning datastore...' : 'Run 3-Year Purge Sweep'}
                   </button>
+                </div>
+
+                {/* Simulation block details */}
+                <div className="border border-border/60 rounded-xl p-3.5 bg-brand/5 mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-brand flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4" /> Interactive Retention Sweep Test Sandbox
+                    </span>
+                    <button
+                      onClick={() => {
+                        // Inject Expired records from 2021
+                        try {
+                          const activeBizId = localDb.getActiveBusinessId() || 'DEFAULT_BUSINESS';
+                          const expiredDate = '2021-04-12T10:30:00.000Z'; // 5 years ago
+                    
+                          // 1. Expired sale
+                          const expiredSale = {
+                            id: crypto.randomUUID(),
+                            businessId: activeBizId,
+                            shopId: 'Main Branch',
+                            items: [{ productId: 'MOCK_EXPIRED', name: 'Simulated Expired Basin Sales (April 2021)', quantity: 1, price: 1200, variantName: 'Default' }],
+                            total: 1200,
+                            timestamp: expiredDate,
+                            cashierId: 'cashier-test',
+                            cashierName: 'Jane Expired',
+                            paymentMethod: 'CASH',
+                            status: 'COMPLETED'
+                          };
+                          const salesRaw = localStorage.getItem('dmi_pos_sales');
+                          const sales = salesRaw ? JSON.parse(salesRaw) : [];
+                          localStorage.setItem('dmi_pos_sales', JSON.stringify([expiredSale, ...sales]));
+
+                          // 2. Expired expense
+                          const expiredExpense = {
+                            id: crypto.randomUUID(),
+                            businessId: activeBizId,
+                            category: 'Wages',
+                            amount: 15000,
+                            date: '2021-04-12',
+                            notes: 'Outdated Rent'
+                          };
+                          const expensesRaw = localStorage.getItem('dmi_pos_expenses');
+                          const expenses = expensesRaw ? JSON.parse(expensesRaw) : [];
+                          localStorage.setItem('dmi_pos_expenses', JSON.stringify([expiredExpense, ...expenses]));
+
+                          alert('Successfully injected mock expired records dated in April 2021 into local storage! Now click the "Run 3-Year Purge Sweep" button to verify the retention purge deletes them in real-time!');
+                        } catch (e) {
+                          console.error(e);
+                        }
+                      }}
+                      className="text-[9px] font-black uppercase bg-brand/10 hover:bg-brand/20 text-brand px-2.5 py-1 rounded"
+                    >
+                      🧪 Inject 2021 Expired Records
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    By default, your database might not have 3-year-old entries. Click <strong>"Inject 2021 Expired Records"</strong> to add test sales and expenses dated 5 years ago, and then sweep them away to test the retention vacuum compliance algorithm.
+                  </p>
+                </div>
+
+                {/* Backups file logs */}
+                <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 font-mono text-[10px] text-slate-300 min-h-[120px]">
+                  <div className="flex items-center justify-between text-white font-sans font-bold text-[10px] uppercase border-b border-neutral-800 pb-2 mb-2">
+                    <span>Generated DMi POS Backup Files Archive</span>
+                    <span className="text-neutral-500 font-normal">Stored in IndexedDB / Download log</span>
+                  </div>
+                  
+                  {purgeResult && (
+                    <div className="mb-2 p-2 rounded bg-red-950/40 border border-red-900/60 text-red-400 font-sans leading-relaxed text-[11px]">
+                      🚨 <strong>Retention Sweep executed:</strong> Cleaned <strong>{purgeResult.purgedCount} expired record(s)</strong> older than 3 years. Tables vacuumed: [<strong>{purgeResult.tablesAffected.join(', ') || 'none'}</strong>].
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5 max-h-[140px] overflow-y-auto">
+                    {backupsList.length === 0 ? (
+                      <div className="text-neutral-500 italic py-4 text-center font-sans">
+                        No backup files generated in the archives yet. Click "Download Manual Backup" to prompt a local copy!
+                      </div>
+                    ) : (
+                      backupsList.map((bk) => (
+                        <div key={bk.id} className="flex justify-between items-center bg-neutral-850 border border-neutral-800/80 p-2 rounded">
+                          <div className="truncate">
+                            <span className="text-amber-400 font-bold">📄 {bk.filename}</span>
+                            <span className="text-neutral-500 block text-[9px] mt-0.5">
+                              Created: {new Date(bk.timestamp).toLocaleString()} | Size: {bk.dataSize} KB
+                            </span>
+                          </div>
+                          <span className="text-emerald-400 font-bold text-[9px] uppercase px-2 py-0.5 bg-emerald-950/40 rounded border border-emerald-900/40 shrink-0">
+                            {bk.recordCount} records
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* Console window */}
-              <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 font-mono text-[9px] text-slate-300 flex-1 min-h-[120px] max-h-[160px] overflow-y-auto space-y-1">
-                {hardwareLog.length === 0 ? (
-                  <div className="text-neutral-500 italic text-center py-6">
-                    Awaiting POS hardware triggers...
+              {/* POS Hardware Printer & Barcode Gateways */}
+              <div className="lg:col-span-5 bg-card border border-border rounded-xl p-6 shadow-sm flex flex-col justify-between">
+                <div>
+                  <h3 className="text-md font-bold text-ink mb-1.5 flex items-center gap-2">
+                    <Maximize2 className="w-4.5 h-4.5 text-brand" /> POS Hardware Printer & Barcode Gateways
+                  </h3>
+                  <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                    Interact with real hardware testing hooks. Trigger simulated laser checks and test printing receipts directly from the web sandbox wrapper frames.
+                  </p>
+
+                  {/* Hardware controls */}
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <button
+                      onClick={() => triggerHardwareBridge('print')}
+                      className="p-3 border border-border hover:border-brand bg-slate-50 dark:bg-slate-900/40 hover:bg-brand/5 rounded-xl flex flex-col items-center justify-center text-center transition-all group gap-2"
+                    >
+                      <Printer className="w-6 h-6 text-slate-400 group-hover:text-brand transition-colors" />
+                      <span className="text-xs font-bold text-ink">Print Test Receipt</span>
+                      <span className="text-[9px] text-slate-400">Handshake Epson/Star ESC/POS</span>
+                    </button>
+
+                    <button
+                      onClick={() => triggerHardwareBridge('scan')}
+                      className="p-3 border border-border hover:border-brand bg-slate-50 dark:bg-slate-900/40 hover:bg-brand/5 rounded-xl flex flex-col items-center justify-center text-center transition-all group gap-2"
+                    >
+                      <Barcode className="w-6 h-6 text-slate-400 group-hover:text-brand transition-colors" />
+                      <span className="text-xs font-bold text-ink">Beam Laser Scan</span>
+                      <span className="text-[9px] text-slate-400">Emulate physical reader inputs</span>
+                    </button>
                   </div>
-                ) : (
-                  hardwareLog.map((log, idx) => (
-                    <div key={idx} className="leading-relaxed">
-                      {log}
+                </div>
+
+                {/* Console window */}
+                <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 font-mono text-[9px] text-slate-300 min-h-[140px] max-h-[160px] overflow-y-auto space-y-1">
+                  <div className="font-sans font-bold text-white text-[9px] uppercase border-b border-neutral-800 pb-1.5 mb-1.5">
+                    Hardware Emulation Stream Logs
+                  </div>
+                  {hardwareLog.length === 0 ? (
+                    <div className="text-neutral-500 italic text-center py-6">
+                      Awaiting POS hardware triggers...
                     </div>
-                  ))
-                )}
+                  ) : (
+                    hardwareLog.map((log, idx) => (
+                      <div key={idx} className="leading-relaxed">
+                        {log}
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           </motion.div>

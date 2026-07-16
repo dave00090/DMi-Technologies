@@ -19,6 +19,7 @@ import { Ledger } from './components/Ledger';
 import { UserProfile, Alert, BusinessProfile, Shop } from './types';
 import { localDb } from './services/localDb';
 import { localAuth } from './services/localAuth';
+import { backupEngine } from './services/backupEngine';
 import { createPortal } from 'react-dom';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -94,6 +95,15 @@ export default function App() {
 
   useEffect(() => {
     localDb.vacuum();
+    
+    // Auto backup & 3-year data retention compliance check
+    try {
+      backupEngine.checkAndRunScheduledBackup();
+      backupEngine.purgeDataOlderThanThreeYears();
+    } catch (e) {
+      console.warn('Backup or purge failed on startup:', e);
+    }
+
     const isActivatedLocally = localDb.isActivated();
     
     // License Heartbeat & Anti-Piracy Check

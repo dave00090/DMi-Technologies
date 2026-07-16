@@ -40,6 +40,13 @@ export const StandalonePrintPage: React.FC<{ saleId: string }> = ({ saleId }) =>
   }, [saleId]);
 
   useEffect(() => {
+    document.body.classList.add('printing-receipt');
+    return () => {
+      document.body.classList.remove('printing-receipt');
+    };
+  }, []);
+
+  useEffect(() => {
     if (sale && business) {
       const timer = setTimeout(() => {
         window.print();
