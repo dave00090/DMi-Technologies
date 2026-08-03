@@ -1,13 +1,28 @@
--- ====================================================================
--- DMi TECHNOLOGIES KENYA - MASTER DATABASE SCHEMA (IDEMPOTENT & SAFE)
--- ====================================================================
--- Run this script in your Supabase SQL Editor.
--- Safe to execute multiple times on existing databases.
+import React, { useState } from 'react';
+import { Copy, Check, Search, Database, Terminal, FileCode, CheckCircle } from 'lucide-react';
 
--- --------------------------------------------------------------------
--- 1. LICENSES TABLE & REALTIME
--- --------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.licenses (
+interface SchemaItem {
+  name: string;
+  description: string;
+  sql: string;
+}
+
+export const MasterDatabaseSchema: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'master' | 'tenant' | 'queries'>('master');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [copiedName, setCopiedName] = useState<string | null>(null);
+
+  const handleCopy = (name: string, sql: string) => {
+    navigator.clipboard.writeText(sql);
+    setCopiedName(name);
+    setTimeout(() => setCopiedName(null), 2000);
+  };
+
+  const masterTables: SchemaItem[] = [
+    {
+      name: 'licenses',
+      description: 'Stores master client hardware credentials, activation keys, expiration metadata, subscription levels (Bronze/Silver/Gold), and M-Pesa lock statuses.',
+      sql: `CREATE TABLE IF NOT EXISTS public.licenses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     license_key VARCHAR(255) UNIQUE NOT NULL,
     client_name VARCHAR(255) NOT NULL,
@@ -15,6 +30,7 @@ CREATE TABLE IF NOT EXISTS public.licenses (
     machine_id VARCHAR(255),
     authorized_domain VARCHAR(255),
     system_name VARCHAR(255) DEFAULT 'RetailMaster',
+    plan_type VARCHAR(100) DEFAULT 'Bronze Standard',
     license_fee NUMERIC(15, 2) DEFAULT 0.00,
     penalty_amount NUMERIC(15, 2) DEFAULT 0.00,
     grace_period_days INT DEFAULT 7,
@@ -23,10 +39,11 @@ CREATE TABLE IF NOT EXISTS public.licenses (
     payment_status VARCHAR(50) DEFAULT 'PENDING',
     payment_phone VARCHAR(50),
     mpesa_reference VARCHAR(100),
+    last_heartbeat TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Ensure backwards-compatible columns exist
+-- Ensure backwards-compatible columns
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS expiry_date DATE;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE;
 
@@ -55,16 +72,16 @@ BEGIN
       ALTER PUBLICATION supabase_realtime ADD TABLE public.licenses;
     END IF;
   END IF;
-END $$;
-
-
--- --------------------------------------------------------------------
--- 2. SALES TABLE (FIXES MISSING TOTAL COLUMN)
--- --------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.sales (
+END $$;`
+    },
+    {
+      name: 'sales',
+      description: 'Centrally records real-time terminal checkout figures, item arrays, and mpesa references for analytical reporting.',
+      sql: `CREATE TABLE IF NOT EXISTS public.sales (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     business_id VARCHAR(255) NOT NULL,
     shop_id VARCHAR(255),
+    items JSONB NOT NULL,
     total NUMERIC(15, 2) DEFAULT 0.00,
     total_amount NUMERIC(15, 2) DEFAULT 0.00,
     payment_method VARCHAR(50) DEFAULT 'CASH',
@@ -73,21 +90,22 @@ CREATE TABLE IF NOT EXISTS public.sales (
     customer_id VARCHAR(255),
     customer_name VARCHAR(255),
     loyalty_points_earned INT DEFAULT 0,
+    discount JSONB,
     tax_amount NUMERIC(15, 2) DEFAULT 0.00,
-    discount NUMERIC(15, 2) DEFAULT 0.00,
-    items JSONB DEFAULT '[]'::jsonb,
-    synced BOOLEAN DEFAULT true,
+    tax_rate NUMERIC(5, 2) DEFAULT 16.00,
+    cash_received NUMERIC(15, 2),
+    change NUMERIC(15, 2),
+    status VARCHAR(50) DEFAULT 'COMPLETED',
+    mpesa_reference VARCHAR(100),
+    etims_control_number VARCHAR(120),
+    etims_qr_code TEXT,
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Ensure both 'total' and 'total_amount' exist & populate missing values
+-- Ensure both total and total_amount exist and are synced
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS total NUMERIC(15, 2) DEFAULT 0.00;
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS total_amount NUMERIC(15, 2) DEFAULT 0.00;
-
-UPDATE public.sales 
-SET total = COALESCE(total, total_amount, 0), 
-    total_amount = COALESCE(total_amount, total, 0) 
-WHERE total IS NULL OR total_amount IS NULL;
+UPDATE public.sales SET total = COALESCE(total, total_amount, 0), total_amount = COALESCE(total_amount, total, 0) WHERE total IS NULL OR total_amount IS NULL;
 
 -- Enable RLS & Indexes
 ALTER TABLE public.sales ENABLE ROW LEVEL SECURITY;
@@ -100,13 +118,12 @@ CREATE POLICY "Allow anonymous sales upload" ON public.sales
 
 DROP POLICY IF EXISTS "Allow Master reading of metrics" ON public.sales;
 CREATE POLICY "Allow Master reading of metrics" ON public.sales 
-    FOR SELECT USING (true);
-
-
--- --------------------------------------------------------------------
--- 3. PIRACY ALERTS TABLE & REALTIME
--- --------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.piracy_alerts (
+    FOR SELECT USING (true);`
+    },
+    {
+      name: 'piracy_alerts',
+      description: 'Security audit trail log storing hardware cloning warnings, key tampering, manual cash drawer kicks, and licensing violations.',
+      sql: `CREATE TABLE IF NOT EXISTS public.piracy_alerts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     business_id VARCHAR(255),
     license_key VARCHAR(255) NOT NULL,
@@ -146,16 +163,16 @@ BEGIN
       ALTER PUBLICATION supabase_realtime ADD TABLE public.piracy_alerts;
     END IF;
   END IF;
-END $$;
-
-
--- --------------------------------------------------------------------
--- 4. LOGIN HISTORY TABLE
--- --------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.login_history (
+END $$;`
+    },
+    {
+      name: 'login_history',
+      description: 'Maintains secure audit logs of system login success and failure actions of cashiers or admins across local terminals.',
+      sql: `CREATE TABLE IF NOT EXISTS public.login_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id VARCHAR(255) NOT NULL,
     user_name VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL,
     status VARCHAR(50) NOT NULL,
     ip_address VARCHAR(100),
     device TEXT,
@@ -171,13 +188,12 @@ CREATE POLICY "Allow login tracking recording" ON public.login_history
 
 DROP POLICY IF EXISTS "Allow audit inspection" ON public.login_history;
 CREATE POLICY "Allow audit inspection" ON public.login_history 
-    FOR SELECT USING (true);
-
-
--- --------------------------------------------------------------------
--- 5. CLOUD SYNC STATE TABLE
--- --------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.cloud_sync_state (
+    FOR SELECT USING (true);`
+    },
+    {
+      name: 'cloud_sync_state',
+      description: 'Secure backup snapshot store containing fully synced json state packets for robust offline disaster recoveries.',
+      sql: `CREATE TABLE IF NOT EXISTS public.cloud_sync_state (
     id VARCHAR(255) PRIMARY KEY,
     data JSONB NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
@@ -187,4 +203,203 @@ ALTER TABLE public.cloud_sync_state ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Allow backup syncing" ON public.cloud_sync_state;
 CREATE POLICY "Allow backup syncing" ON public.cloud_sync_state 
-    FOR ALL USING (true) WITH CHECK (true);
+    FOR ALL USING (true) WITH CHECK (true);`
+    }
+  ];
+
+  const tenantTables: SchemaItem[] = [
+    {
+      name: 'businesses & shops',
+      description: 'Stores profile metadata, operational configurations, and outlet branches of client local-first installations.',
+      sql: `CREATE TABLE IF NOT EXISTS businesses (
+    id VARCHAR(255) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(100) NOT NULL,
+    currency VARCHAR(20) DEFAULT 'KSh',
+    tax_rate NUMERIC(5, 2) DEFAULT 16.00,
+    address TEXT,
+    phone VARCHAR(50),
+    email VARCHAR(255),
+    synced BOOLEAN DEFAULT false
+);
+
+CREATE TABLE IF NOT EXISTS shops (
+    id VARCHAR(255) PRIMARY KEY,
+    business_id VARCHAR(255) REFERENCES businesses(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    location TEXT,
+    phone VARCHAR(50)
+);`
+    },
+    {
+      name: 'products & variants',
+      description: 'Holds stock inventory quantities, Barcode scan records, buying rates, and customized consumer pricing structures.',
+      sql: `CREATE TABLE IF NOT EXISTS products (
+    id VARCHAR(255) PRIMARY KEY,
+    business_id VARCHAR(255) REFERENCES businesses(id) ON DELETE CASCADE,
+    shop_id VARCHAR(255) REFERENCES shops(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    sku VARCHAR(100) NOT NULL,
+    category VARCHAR(100)
+);
+
+CREATE TABLE IF NOT EXISTS product_variants (
+    id VARCHAR(255) PRIMARY KEY,
+    product_id VARCHAR(255) REFERENCES products(id) ON DELETE CASCADE,
+    barcode VARCHAR(100),
+    name VARCHAR(100) DEFAULT 'Default',
+    buying_price NUMERIC(15, 2) DEFAULT 0.00,
+    price NUMERIC(15, 2) NOT NULL,
+    stock INT DEFAULT 0,
+    min_stock_alert INT DEFAULT 5,
+    expiry_date DATE
+);`
+    }
+  ];
+
+  const queries: SchemaItem[] = [
+    {
+      name: 'profit_and_loss_analytics',
+      description: 'Computes total profit margins automatically by auditing raw sales turnover, inventory costs (COGs), and daily petty expenses.',
+      sql: `WITH revenue_summary AS (
+    SELECT 
+        COALESCE(SUM(total), SUM(total_amount), 0) AS gross_sales_revenue,
+        COALESCE(SUM(tax_amount), 0) AS gathered_sales_tax
+    FROM public.sales 
+    WHERE timestamp::DATE = CURRENT_DATE
+),
+cost_summary AS (
+    SELECT 
+        COALESCE(SUM((item->>'buying_price')::NUMERIC * (item->>'quantity')::INT), 0) AS inventory_cogs
+    FROM public.sales,
+    LATERAL jsonb_array_elements(items) AS item
+    WHERE timestamp::DATE = CURRENT_DATE
+)
+SELECT 
+    rev.gross_sales_revenue,
+    rev.gathered_sales_tax,
+    costs.inventory_cogs,
+    (rev.gross_sales_revenue - costs.inventory_cogs) AS gross_profit
+FROM revenue_summary rev
+CROSS JOIN cost_summary costs;`
+    }
+  ];
+
+  const getActiveArray = () => {
+    switch (activeTab) {
+      case 'master': return masterTables;
+      case 'tenant': return tenantTables;
+      case 'queries': return queries;
+    }
+  };
+
+  const filteredItems = getActiveArray().filter(item => 
+    item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    item.sql.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-950/40 p-5 rounded-3xl border border-slate-800">
+        <div>
+          <h3 className="text-lg font-black uppercase tracking-tight text-white flex items-center gap-2">
+            <Database className="w-5 h-5 text-indigo-400" />
+            SQL Schema & Query Library
+          </h3>
+          <p className="text-xs text-slate-500 mt-1">
+            Standard PostgreSQL schemas and analytical queries configured for master servers and offline client tenants.
+          </p>
+        </div>
+        <div className="relative shrink-0 w-full sm:w-72">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <input
+            type="text"
+            placeholder="Search schemas or SQL queries..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full"
+          />
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-slate-850 gap-2">
+        <button
+          onClick={() => { setActiveTab('master'); setSearchQuery(''); }}
+          className={`px-5 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 ${activeTab === 'master' ? 'border-indigo-500 text-white bg-indigo-500/5' : 'border-transparent text-slate-500 hover:text-slate-350'}`}
+        >
+          <Terminal className="w-3.5 h-3.5" />
+          Master Admin (Supabase)
+        </button>
+        <button
+          onClick={() => { setActiveTab('tenant'); setSearchQuery(''); }}
+          className={`px-5 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 ${activeTab === 'tenant' ? 'border-indigo-500 text-white bg-indigo-500/5' : 'border-transparent text-slate-500 hover:text-slate-350'}`}
+        >
+          <Database className="w-3.5 h-3.5" />
+          POS Tenants
+        </button>
+        <button
+          onClick={() => { setActiveTab('queries'); setSearchQuery(''); }}
+          className={`px-5 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 ${activeTab === 'queries' ? 'border-indigo-500 text-white bg-indigo-500/5' : 'border-transparent text-slate-500 hover:text-slate-350'}`}
+        >
+          <FileCode className="w-3.5 h-3.5" />
+          Analytical Queries
+        </button>
+      </div>
+
+      {/* Tables & Code Render */}
+      <div className="space-y-6">
+        {filteredItems.length === 0 ? (
+          <div className="p-12 text-center rounded-2xl border border-dashed border-slate-800 text-slate-500 text-xs">
+            No matching SQL structures or queries found for "{searchQuery}".
+          </div>
+        ) : (
+          filteredItems.map((item) => (
+            <div key={item.name} className="bg-slate-950/70 border border-slate-850 rounded-2xl overflow-hidden shadow-sm">
+              <div className="px-6 py-4 bg-slate-900/30 border-b border-slate-850 flex items-center justify-between gap-4">
+                <div>
+                  <h4 className="font-extrabold text-white text-sm tracking-tight flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />
+                    {activeTab === 'queries' ? `${item.name}.sql` : `table: ${item.name}`}
+                  </h4>
+                  <p className="text-slate-400 text-xs leading-relaxed mt-1">{item.description}</p>
+                </div>
+                <button
+                  onClick={() => handleCopy(item.name, item.sql)}
+                  className={`px-3 py-1.5 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 shrink-0 ${copiedName === item.name ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-slate-900 border-slate-800 hover:bg-slate-850 text-slate-400'}`}
+                >
+                  {copiedName === item.name ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      Copy DDL
+                    </>
+                  )}
+                </button>
+              </div>
+              <div className="p-4 bg-slate-950">
+                <pre className="text-[11px] font-mono text-indigo-200/90 leading-relaxed overflow-x-auto max-h-72 p-2 scrollbar-thin scrollbar-thumb-slate-800">
+                  <code>{item.sql}</code>
+                </pre>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="p-5 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl flex items-center gap-4 text-xs">
+        <div className="w-8 h-8 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 shrink-0">
+          <CheckCircle className="w-4 h-4" />
+        </div>
+        <p className="text-slate-400">
+          All central licensing matrices are mapped to the live production database. You can instantly run any of the above table definitions (DDL) directly in your main host console or database cluster shell.
+        </p>
+      </div>
+    </div>
+  );
+};
