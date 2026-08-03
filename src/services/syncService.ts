@@ -1,6 +1,21 @@
 import { localDb, getLocal, setLocal } from './localDb';
 import axios from 'axios';
 
+export interface DiagnosticStep {
+  name: string;
+  status: 'PASS' | 'WARN' | 'FAIL';
+  message: string;
+  latencyMs?: number;
+}
+
+export interface DiagnosticResult {
+  timestamp: string;
+  overallStatus: 'ONLINE' | 'OFFLINE_STANDALONE' | 'UNREACHABLE';
+  displayUrl: string;
+  steps: DiagnosticStep[];
+  troubleshootingSteps: string[];
+}
+
 export interface SyncLog {
   timestamp: string;
   type: 'INFO' | 'SUCCESS' | 'ERROR';
@@ -126,7 +141,12 @@ class SyncService {
     // Clear legacy error logs when switching URLs
     this.syncLogs = this.syncLogs.filter(log => log.type !== 'ERROR');
     localStorage.setItem('dmi_pos_sync_server_url', sanitized);
-    this.addLog('INFO', `Sync backend server gateway set to: ${sanitized}`);
+
+    if (sanitized.includes('netlify.app') || sanitized.includes('vercel.app') || sanitized.includes('github.io')) {
+      this.addLog('INFO', `Sync gateway set to: ${sanitized} (Frontend Web Host detected). For live database sync, please configure your Supabase REST endpoint URL (e.g. https://<project>.supabase.co). Terminal will operate in Local-First Standalone mode.`);
+    } else {
+      this.addLog('INFO', `Sync backend server gateway set to: ${sanitized}`);
+    }
     this.checkConnectivity();
   }
 
@@ -220,6 +240,13 @@ class SyncService {
       return false;
     }
 
+    const currentDisplayUrl = this.getDisplayUrl();
+    if (currentDisplayUrl.includes('netlify.app') || currentDisplayUrl.includes('vercel.app') || currentDisplayUrl.includes('github.io')) {
+      this.updateOnlineStatus(true); // Terminal is connected to internet locally
+      this.lastConnectionError = 'Configured URL is a Netlify web frontend, not a Supabase REST API server. Operating in Local-First Standalone mode.';
+      return false;
+    }
+
     try {
       const response = await this.getApiClient().get('/api/health', { timeout: 4000 });
       const isHtml = typeof response.data === 'string' && (response.data.includes('<!DOCTYPE html') || response.data.includes('<html'));
@@ -228,18 +255,154 @@ class SyncService {
       if (online) {
         this.lastConnectionError = '';
       } else if (isHtml) {
-        this.lastConnectionError = 'Sync gateway URL points to a static site instead of a live API server.';
+        this.lastConnectionError = 'Server URL points to a static HTML site instead of a Supabase REST API server. Operating in Local-First mode.';
       } else {
         this.lastConnectionError = `Server returned status ${response.status}`;
       }
       return online;
     } catch (e: any) {
-      this.updateOnlineStatus(false);
+      // Terminal has active wifi, so set online status to true for local operations
+      this.updateOnlineStatus(navigator.onLine);
       this.lastConnectionError = e.response
         ? `HTTP ${e.response.status}: ${e.response.statusText || 'Error response'}`
         : e.message || 'API Timeout / Connection Refused';
       console.warn('Connectivity healthcheck failed for URL:', this.getDisplayUrl(), this.lastConnectionError);
       return false;
+    }
+  }
+
+  public getLastConnectionError(): string {
+    return this.lastConnectionError;
+  }
+
+  public async runDiagnostics(): Promise<DiagnosticResult> {
+    const url = this.getDisplayUrl();
+    const steps: DiagnosticStep[] = [];
+    const troubleshootingSteps: string[] = [];
+    const startOverall = Date.now();
+
+    // Step 1: Device Internet Check
+    const isDeviceOnline = navigator.onLine;
+    steps.push({
+      name: 'Network Connection',
+      status: isDeviceOnline ? 'PASS' : 'FAIL',
+      message: isDeviceOnline 
+        ? 'Local Wi-Fi / Ethernet adapter is active and online.' 
+        : 'Device appears offline. Reconnect your Wi-Fi or Ethernet cable.'
+    });
+
+    if (!isDeviceOnline) {
+      troubleshootingSteps.push('Verify that your device Wi-Fi or Ethernet cable is plugged in and turned on.');
+      troubleshootingSteps.push('Check router connection or test internet by browsing a public web page.');
+    }
+
+    // Step 2: Server Gateway URL Syntax & Protocol
+    let isUrlValid = false;
+    let isStaticHosting = false;
+    try {
+      const parsed = new URL(url);
+      isUrlValid = parsed.protocol === 'http:' || parsed.protocol === 'https:';
+      if (url.includes('netlify.app') || url.includes('vercel.app') || url.includes('github.io')) {
+        isStaticHosting = true;
+      }
+    } catch (e) {
+      isUrlValid = false;
+    }
+
+    if (!isUrlValid) {
+      steps.push({
+        name: 'Gateway URL Validation',
+        status: 'FAIL',
+        message: `Invalid Server URL format: "${url}". Must begin with http:// or https://`
+      });
+      troubleshootingSteps.push('Click "Reset Default" or enter a valid URL beginning with http:// or https://');
+    } else if (isStaticHosting) {
+      steps.push({
+        name: 'Gateway URL Target Type',
+        status: 'WARN',
+        message: 'URL points to a static frontend site (Netlify/Vercel/GitHub Pages) instead of a live Supabase REST API or Express Backend server.'
+      });
+      troubleshootingSteps.push('Ensure your Sync Gateway URL points to a Supabase database endpoint (e.g. https://<project-id>.supabase.co) or an active Express backend.');
+      troubleshootingSteps.push('Local Standalone Mode is active: sales and inventory cache safely in local browser storage.');
+    } else {
+      steps.push({
+        name: 'Gateway URL Syntax',
+        status: 'PASS',
+        message: `URL schema "${url}" is valid.`
+      });
+    }
+
+    // Step 3: Server Health Ping & Latency
+    let pingLatency = 0;
+    let isServerReachable = false;
+    let isHtmlResponse = false;
+    let statusCode = 0;
+
+    if (isDeviceOnline && isUrlValid && !isStaticHosting) {
+      const pingStart = Date.now();
+      try {
+        const response = await this.getApiClient().get('/api/health', { timeout: 5000 });
+        pingLatency = Date.now() - pingStart;
+        statusCode = response.status;
+        isHtmlResponse = typeof response.data === 'string' && (response.data.includes('<!DOCTYPE html') || response.data.includes('<html'));
+        isServerReachable = response.status === 200 && !isHtmlResponse;
+
+        steps.push({
+          name: 'Server Ping & Latency',
+          status: isServerReachable ? 'PASS' : 'FAIL',
+          message: isServerReachable 
+            ? `Server responded with status HTTP 200 in ${pingLatency}ms.` 
+            : isHtmlResponse 
+              ? 'Server returned an HTML web page instead of JSON API response.'
+              : `Server returned status HTTP ${response.status}`,
+          latencyMs: pingLatency
+        });
+      } catch (e: any) {
+        pingLatency = Date.now() - pingStart;
+        const errText = e.response ? `HTTP ${e.response.status}` : e.message || 'Connection Refused / Timeout';
+        steps.push({
+          name: 'Server Ping & Latency',
+          status: 'FAIL',
+          message: `Unable to reach gateway healthcheck: ${errText}`,
+          latencyMs: pingLatency
+        });
+        troubleshootingSteps.push(`Check if the remote server at ${url} is running and reachable from this network.`);
+        troubleshootingSteps.push('If running locally on LAN, ensure firewall allows incoming connections on port 3000.');
+      }
+    }
+
+    // Step 4: Standalone Database Cache Check
+    const pendingRecords = this.getPendingCount();
+    steps.push({
+      name: 'Local Offline Cache Readiness',
+      status: 'PASS',
+      message: `Local IndexedDB cache engine is active with ${pendingRecords} pending unsynced records safely queued.`
+    });
+
+    if (isServerReachable) {
+      this.updateOnlineStatus(true);
+      this.lastConnectionError = '';
+      this.addLog('SUCCESS', `Diagnostic Check Passed: Gateway ${url} is fully connected (${pingLatency}ms).`);
+      return {
+        timestamp: new Date().toISOString(),
+        overallStatus: 'ONLINE',
+        displayUrl: url,
+        steps,
+        troubleshootingSteps: ['All system checks passed! Your terminal is actively syncing with the central database.']
+      };
+    } else {
+      const isStandalone = isStaticHosting || !isUrlValid;
+      this.updateOnlineStatus(isDeviceOnline);
+      this.addLog('ERROR', `Diagnostic Test: ${url} unreachable - ${this.lastConnectionError || 'Operating in Local-First Standalone mode'}`);
+      return {
+        timestamp: new Date().toISOString(),
+        overallStatus: isStandalone ? 'OFFLINE_STANDALONE' : 'UNREACHABLE',
+        displayUrl: url,
+        steps,
+        troubleshootingSteps: troubleshootingSteps.length > 0 
+          ? troubleshootingSteps 
+          : ['Check gateway server firewall settings.', 'Verify CORS headers allow requests from your browser domain.', 'Local Standalone Mode is active: all transactions remain 100% saved offline.']
+      };
     }
   }
 

@@ -24,13 +24,51 @@ import {
   Smartphone,
   CheckCircle,
   ShieldCheck,
-  Laptop
+  Laptop,
+  UserCheck,
+  UserPlus,
+  Clock,
+  Megaphone,
+  Send,
+  Terminal,
+  Cpu,
+  Copy,
+  Check,
+  Plus,
+  Edit,
+  Trash2,
+  Sliders,
+  Code,
+  Globe,
+  Bell,
+  BellRing,
+  CheckCheck,
+  Zap,
+  Filter,
+  X,
+  Building2
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
 import { supabase, License, masterService } from '../services/masterService';
+import { localDb } from '../services/localDb';
 import { SaaSHub } from './SaaSHub';
 import { MasterDatabaseSchema } from './MasterDatabaseSchema';
+
+export interface MasterNotification {
+  id: string;
+  category: 'BUSINESS_ACTIVATION' | 'LICENSE_EXPIRY' | 'SECURITY_PIRACY' | 'SYSTEM_ALERT';
+  severity: 'CRITICAL' | 'WARNING' | 'INFO';
+  title: string;
+  message: string;
+  timestamp: string;
+  read: boolean;
+  clientName?: string;
+  licenseKey?: string;
+  shopId?: string;
+  actionType?: 'APPROVE_LICENSE' | 'EXTEND_EXPIRY' | 'RESOLVE_PIRACY' | 'VIEW_CLIENT';
+  metadata?: any;
+}
 
 interface MasterAdminProps {
   onLogout: () => void;
@@ -49,9 +87,72 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
     onlineStaff: 0
   });
   const [isLoading, setIsLoading] = useState(true);
-  const [view, setView] = useState<'dashboard' | 'licenses' | 'security' | 'pricing' | 'saas-hub' | 'database'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'licenses' | 'security' | 'pricing' | 'saas-hub' | 'database' | 'hrm-master' | 'notifications'>('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   const [networkStatus, setNetworkStatus] = useState<'online' | 'offline'>('online');
+
+  // Real-Time Notification System States
+  const [notifications, setNotifications] = useState<MasterNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
+  const [notificationFilter, setNotificationFilter] = useState<'ALL' | 'BUSINESS_ACTIVATION' | 'LICENSE_EXPIRY' | 'SECURITY_PIRACY'>('ALL');
+  const [alertToast, setAlertToast] = useState<{ title: string; message: string; category: string } | null>(null);
+
+  // Custom Pricing Rates state
+  const [customRates, setCustomRates] = useState(() => {
+    try {
+      const saved = localStorage.getItem('dmi_pos_custom_pricing');
+      return saved ? JSON.parse(saved) : { bronze: 2500, silver: 4500, gold: 7500, lifetime: 45000 };
+    } catch (e) {
+      return { bronze: 2500, silver: 4500, gold: 7500, lifetime: 45000 };
+    }
+  });
+  const [ratesSavedNotice, setRatesSavedNotice] = useState(false);
+
+  // Marketing Broadcast state
+  const [broadcastHeadline, setBroadcastHeadline] = useState('');
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [broadcastNotice, setBroadcastNotice] = useState('');
+
+  // HRM Master state
+  const [masterEmployees, setMasterEmployees] = useState<any[]>([]);
+  const [hrmSearch, setHrmSearch] = useState('');
+  const [isHrmModalOpen, setIsHrmModalOpen] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<any | null>(null);
+  const [hrmFormData, setHrmFormData] = useState({
+    businessId: 'DEFAULT_BUSINESS',
+    shopId: 'Main Branch',
+    name: '',
+    email: '',
+    phone: '',
+    role: 'Cashier',
+    salary: 25000,
+    hireDate: new Date().toISOString().split('T')[0],
+    status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'ON_LEAVE'
+  });
+
+  // Offline License Generator state inside Dev Hub
+  const [devMachineId, setDevMachineId] = useState('');
+  const [devClientName, setDevClientName] = useState('Client Standalone EXE');
+  const [generatedOfflineKey, setGeneratedOfflineKey] = useState('');
+  const [generatedOfflineResponseCode, setGeneratedOfflineResponseCode] = useState('');
+  const [keyCopied, setKeyCopied] = useState(false);
+
+  // Webhook / API Tester state
+  const [webhookUrl, setWebhookUrl] = useState('https://api.dmipos.com/v1/mpesa-callback');
+  const [webhookPayload, setWebhookPayload] = useState(JSON.stringify({ event: 'MPESA_PAYMENT_SUCCESS', amount: 3500, phone: '254712345678', mpesaRef: 'QKH89123XZ' }, null, 2));
+  const [webhookResult, setWebhookResult] = useState<string | null>(null);
+
+  // Master API Keys
+  const [apiKeys, setApiKeys] = useState<{ id: string; key: string; name: string; created: string }[]>(() => {
+    try {
+      const saved = localStorage.getItem('dmi_master_api_keys');
+      return saved ? JSON.parse(saved) : [{ id: '1', key: 'dmi_live_sec_99a823x71290a', name: 'Master Operations SDK Token', created: new Date().toISOString() }];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [newKeyName, setNewKeyName] = useState('');
 
   // Pricing & Commercial Strategy States
   const [saasClients, setSaasClients] = useState(5);
@@ -69,8 +170,16 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
     // Real-time subscription for licenses
     const licenseSubscription = supabase
       .channel('master-licenses')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'licenses' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'licenses' }, (payload) => {
         fetchData();
+        if (payload.eventType === 'INSERT') {
+          setAlertToast({
+            title: '✨ Business Activation Requested',
+            message: `Retail client "${payload.new?.client_name || 'New Terminal'}" requested license activation!`,
+            category: 'BUSINESS_ACTIVATION'
+          });
+          setTimeout(() => setAlertToast(null), 6000);
+        }
       })
       .subscribe();
 
@@ -85,8 +194,16 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
     // Real-time subscription for piracy alerts
     const alertsSubscription = supabase
       .channel('master-piracy-alerts')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'piracy_alerts' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'piracy_alerts' }, (payload) => {
         fetchData();
+        if (payload.eventType === 'INSERT') {
+          setAlertToast({
+            title: '🚨 SECURITY & PIRACY ALERT!',
+            message: payload.new?.message || payload.new?.reason || 'Unauthorized clone executable detected in retail terminal!',
+            category: 'SECURITY_PIRACY'
+          });
+          setTimeout(() => setAlertToast(null), 6000);
+        }
       })
       .subscribe();
 
@@ -96,6 +213,251 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
       supabase.removeChannel(alertsSubscription);
     };
   }, []);
+
+  const compileNotificationsList = (licenseList: License[], alertList: any[]) => {
+    let readIds = new Set<string>();
+    try {
+      const saved = localStorage.getItem('dmi_master_read_notifications');
+      if (saved) readIds = new Set(JSON.parse(saved));
+    } catch (e) {}
+
+    const list: MasterNotification[] = [];
+
+    // 1. Business Activations
+    licenseList.forEach(l => {
+      if (l.status === 'PENDING') {
+        list.push({
+          id: `act-pending-${l.id}`,
+          category: 'BUSINESS_ACTIVATION',
+          severity: 'CRITICAL',
+          title: `Pending License Activation: ${l.client_name}`,
+          message: `Retail business "${l.client_name}" (${l.system_type}) requested activation. Key: ${l.license_key}`,
+          timestamp: l.created_at || new Date().toISOString(),
+          read: readIds.has(`act-pending-${l.id}`),
+          clientName: l.client_name,
+          licenseKey: l.license_key,
+          actionType: 'APPROVE_LICENSE',
+          metadata: l
+        });
+      } else if (l.status === 'ACTIVE' && l.created_at && (Date.now() - new Date(l.created_at).getTime()) < 14 * 86400000) {
+        list.push({
+          id: `act-recent-${l.id}`,
+          category: 'BUSINESS_ACTIVATION',
+          severity: 'INFO',
+          title: `Business Activated: ${l.client_name}`,
+          message: `Terminal license ${l.license_key} was activated for ${l.client_name}. System: ${l.system_type}`,
+          timestamp: l.created_at,
+          read: readIds.has(`act-recent-${l.id}`),
+          clientName: l.client_name,
+          licenseKey: l.license_key,
+          actionType: 'VIEW_CLIENT',
+          metadata: l
+        });
+      }
+    });
+
+    // 2. License Expirations
+    const nowMs = Date.now();
+    licenseList.forEach(l => {
+      if (l.expiry_date) {
+        const expiryMs = new Date(l.expiry_date).getTime();
+        const diffDays = Math.ceil((expiryMs - nowMs) / (1000 * 60 * 60 * 24));
+
+        if (diffDays <= 0 || l.status === 'EXPIRED') {
+          list.push({
+            id: `exp-expired-${l.id}`,
+            category: 'LICENSE_EXPIRY',
+            severity: 'CRITICAL',
+            title: `EXPIRED LICENSE: ${l.client_name}`,
+            message: `Retail subscription license for ${l.client_name} expired on ${new Date(l.expiry_date).toLocaleDateString()}. Client system locked.`,
+            timestamp: l.expiry_date,
+            read: readIds.has(`exp-expired-${l.id}`),
+            clientName: l.client_name,
+            licenseKey: l.license_key,
+            actionType: 'EXTEND_EXPIRY',
+            metadata: l
+          });
+        } else if (diffDays <= 30) {
+          list.push({
+            id: `exp-soon-${l.id}`,
+            category: 'LICENSE_EXPIRY',
+            severity: diffDays <= 7 ? 'CRITICAL' : 'WARNING',
+            title: `License Expiring in ${diffDays} Days: ${l.client_name}`,
+            message: `Key ${l.license_key} for ${l.client_name} expires on ${new Date(l.expiry_date).toLocaleDateString()}. Contact shop owner.`,
+            timestamp: l.expiry_date,
+            read: readIds.has(`exp-soon-${l.id}`),
+            clientName: l.client_name,
+            licenseKey: l.license_key,
+            actionType: 'EXTEND_EXPIRY',
+            metadata: l
+          });
+        }
+      }
+    });
+
+    // 3. Security & Piracy Alerts
+    alertList.forEach((a, idx) => {
+      if (!a.resolved) {
+        list.push({
+          id: `sec-${a.id || idx}`,
+          category: 'SECURITY_PIRACY',
+          severity: 'CRITICAL',
+          title: `Security Breach Alert: ${a.client_name || a.license_key || 'Retail Shop Terminal'}`,
+          message: a.message || a.reason || `Hardware MAC/CPU mismatch or unauthorized domain access detected for key ${a.license_key}`,
+          timestamp: a.timestamp || a.created_at || new Date().toISOString(),
+          read: readIds.has(`sec-${a.id || idx}`),
+          clientName: a.client_name,
+          licenseKey: a.license_key,
+          actionType: 'RESOLVE_PIRACY',
+          metadata: a
+        });
+      }
+    });
+
+    // Sort descending by timestamp
+    list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    setNotifications(list);
+    setUnreadCount(list.filter(n => !n.read).length);
+  };
+
+  const handleApproveLicenseNotification = async (licenseKey?: string) => {
+    if (!licenseKey) return;
+    const { data } = await supabase.from('licenses').select('*').eq('license_key', licenseKey).single();
+    if (data) {
+      const nextYear = new Date();
+      nextYear.setFullYear(nextYear.getFullYear() + 1);
+      await supabase.from('licenses').update({
+        status: 'ACTIVE',
+        expiry_date: nextYear.toISOString().split('T')[0]
+      }).eq('id', data.id);
+
+      const cachedLicenseStr = localStorage.getItem('dmi_cached_license');
+      if (cachedLicenseStr) {
+        try {
+          const parsed = JSON.parse(cachedLicenseStr);
+          if (parsed.license_key === licenseKey) {
+            localStorage.setItem('dmi_cached_license', JSON.stringify({
+              ...parsed,
+              status: 'ACTIVE',
+              expiry_date: nextYear.toISOString().split('T')[0]
+            }));
+          }
+        } catch (e) {
+          // Ignore JSON parse errors
+        }
+      }
+
+      setAlertToast({
+        title: 'Business License Activated!',
+        message: `Successfully approved & activated license for ${data.client_name}`,
+        category: 'BUSINESS_ACTIVATION'
+      });
+      setTimeout(() => setAlertToast(null), 4000);
+      fetchData();
+    }
+  };
+
+  const handleExtendLicenseNotification = async (licenseKey?: string, daysToAdd: number = 30) => {
+    if (!licenseKey) return;
+    const { data } = await supabase.from('licenses').select('*').eq('license_key', licenseKey).single();
+    if (data) {
+      const currentExpiry = data.expiry_date ? new Date(data.expiry_date) : new Date();
+      currentExpiry.setDate(currentExpiry.getDate() + daysToAdd);
+      const newExpiryStr = currentExpiry.toISOString().split('T')[0];
+
+      await supabase.from('licenses').update({
+        status: 'ACTIVE',
+        expiry_date: newExpiryStr
+      }).eq('id', data.id);
+
+      setAlertToast({
+        title: 'License Extended!',
+        message: `Extended ${data.client_name} license by ${daysToAdd} days (New expiry: ${newExpiryStr})`,
+        category: 'LICENSE_EXPIRY'
+      });
+      setTimeout(() => setAlertToast(null), 4000);
+      fetchData();
+    }
+  };
+
+  const handleResolvePiracyNotification = async (alertId?: string) => {
+    if (!alertId) return;
+    await supabase.from('piracy_alerts').update({ resolved: true }).eq('id', alertId);
+    setAlertToast({
+      title: 'Security Breach Resolved',
+      message: 'Piracy incident marked as investigated and resolved.',
+      category: 'SECURITY_PIRACY'
+    });
+    setTimeout(() => setAlertToast(null), 4000);
+    fetchData();
+  };
+
+  const handleMarkNotificationRead = (notifId: string) => {
+    try {
+      const saved = localStorage.getItem('dmi_master_read_notifications');
+      const readIds = saved ? JSON.parse(saved) : [];
+      if (!readIds.includes(notifId)) {
+        readIds.push(notifId);
+        localStorage.setItem('dmi_master_read_notifications', JSON.stringify(readIds));
+      }
+    } catch (e) {}
+
+    setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, read: true } : n));
+    setUnreadCount(prev => Math.max(0, prev - 1));
+  };
+
+  const handleMarkAllNotificationsRead = () => {
+    const allIds = notifications.map(n => n.id);
+    localStorage.setItem('dmi_master_read_notifications', JSON.stringify(allIds));
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    setUnreadCount(0);
+  };
+
+  const handleTriggerTestAlert = async () => {
+    const testTypes = ['PIRACY', 'ACTIVATION', 'EXPIRY'];
+    const selected = testTypes[Math.floor(Math.random() * testTypes.length)];
+
+    if (selected === 'PIRACY') {
+      const sampleAlert = {
+        client_name: 'Nairobi West Retail Hub',
+        license_key: 'DMI-TEST-9921-KEY',
+        reason: 'Hardware UUID Mismatch - Unauthorized Clone Executable Launched',
+        timestamp: new Date().toISOString(),
+        resolved: false
+      };
+      await supabase.from('piracy_alerts').insert([sampleAlert]);
+      setAlertToast({
+        title: '🚨 Real-Time Security Alert Simulated',
+        message: 'Cloned executable detected in Nairobi West branch!',
+        category: 'SECURITY_PIRACY'
+      });
+    } else if (selected === 'ACTIVATION') {
+      const sampleLicense = {
+        client_name: 'Mombasa Supermarket Ltd',
+        system_type: 'RetailMaster',
+        license_key: `DMI-MBA-${Math.floor(1000 + Math.random() * 9000)}`,
+        status: 'PENDING',
+        activation_type: 'ANNUAL',
+        created_at: new Date().toISOString()
+      };
+      await supabase.from('licenses').insert([sampleLicense]);
+      setAlertToast({
+        title: '✨ Business Activation Requested',
+        message: 'Mombasa Supermarket Ltd requested new POS license activation!',
+        category: 'BUSINESS_ACTIVATION'
+      });
+    } else {
+      setAlertToast({
+        title: '⚠️ Expiry Warning Simulated',
+        message: 'Eldoret Hardware Outlet license expires in 3 days!',
+        category: 'LICENSE_EXPIRY'
+      });
+    }
+
+    setTimeout(() => setAlertToast(null), 5000);
+    fetchData();
+  };
 
   const [dbHealth, setDbHealth] = useState<{table: string, status: 'ok' | 'missing' | 'checking'}[]>([
     { table: 'licenses', status: 'checking' },
@@ -223,6 +585,7 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
         health.push({ table: 'piracy_alerts', status: 'missing' });
       }
       setPiracyAlerts(alertsList);
+      compileNotificationsList(licenseData || [], alertsList);
       
       setDbHealth(health);
       
@@ -532,6 +895,13 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
             Pricing & Marketing
           </button>
           <button 
+            onClick={() => setView('hrm-master')}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${view === 'hrm-master' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}
+          >
+            <UserCheck className="w-4 h-4" />
+            HRM & Staff Hub
+          </button>
+          <button 
             onClick={() => setView('saas-hub')}
             className={`px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${view === 'saas-hub' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}
           >
@@ -545,9 +915,35 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
             <Database className="w-4 h-4" />
             SQL Schema
           </button>
+          <button 
+            onClick={() => setView('notifications')}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 relative ${view === 'notifications' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}
+          >
+            <Bell className="w-4 h-4 text-amber-400" />
+            <span>Real-Time Alerts</span>
+            {unreadCount > 0 && (
+              <span className="px-1.5 py-0.5 bg-rose-500 text-white text-[10px] font-black rounded-full animate-pulse">
+                {unreadCount}
+              </span>
+            )}
+          </button>
         </nav>
 
         <div className="flex items-center gap-2">
+          {/* Bell Icon Button */}
+          <button
+            onClick={() => setIsNotificationDrawerOpen(!isNotificationDrawerOpen)}
+            className="relative p-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-300 transition-all flex items-center justify-center border border-slate-700"
+            title="Real-Time Alerts Drawer"
+          >
+            <Bell className={`w-5 h-5 ${unreadCount > 0 ? 'text-amber-400 animate-bounce' : 'text-slate-400'}`} />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-slate-900 shadow-md">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
+
           <div className="flex items-center gap-2 px-4 py-2 bg-slate-950/50 border border-slate-800 rounded-xl">
              <div className={`w-2 h-2 rounded-full ${networkStatus === 'online' ? 'bg-emerald-500' : 'bg-red-500'} animate-pulse`} />
              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -1653,6 +2049,465 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
                   </div>
                 </div>
               </div>
+
+              {/* Master Custom Pricing Rates & Marketing Broadcast */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 border-t border-slate-800 pt-8">
+                {/* Pricing Rates Configurator */}
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 space-y-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-indigo-600/20 rounded-xl flex items-center justify-center border border-indigo-500/30">
+                      <Sliders className="w-5 h-5 text-indigo-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black uppercase">Live System Pricing Rates Configurator</h3>
+                      <p className="text-xs text-slate-400">Set commercial subscription rates broadcasted to clients.</p>
+                    </div>
+                  </div>
+
+                  {ratesSavedNotice && (
+                    <div className="p-3 bg-emerald-950/60 border border-emerald-500/40 rounded-xl text-emerald-400 text-xs font-bold flex items-center gap-2">
+                      <Check className="w-4 h-4" /> Pricing rates saved to local system storage & client terminals!
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-4 text-xs">
+                    <div>
+                      <label className="block text-slate-400 font-bold uppercase text-[10px] mb-1">Bronze SaaS (KES/mo)</label>
+                      <input
+                        type="number"
+                        value={customRates.bronze}
+                        onChange={(e) => setCustomRates({ ...customRates, bronze: Number(e.target.value) })}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 font-bold uppercase text-[10px] mb-1">Silver Growth (KES/mo)</label>
+                      <input
+                        type="number"
+                        value={customRates.silver}
+                        onChange={(e) => setCustomRates({ ...customRates, silver: Number(e.target.value) })}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 font-bold uppercase text-[10px] mb-1">Gold Enterprise (KES/mo)</label>
+                      <input
+                        type="number"
+                        value={customRates.gold}
+                        onChange={(e) => setCustomRates({ ...customRates, gold: Number(e.target.value) })}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 font-bold uppercase text-[10px] mb-1">One-Off Lifetime EXE (KES)</label>
+                      <input
+                        type="number"
+                        value={customRates.lifetime}
+                        onChange={(e) => setCustomRates({ ...customRates, lifetime: Number(e.target.value) })}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      localStorage.setItem('dmi_pos_custom_pricing', JSON.stringify(customRates));
+                      setRatesSavedNotice(true);
+                      setTimeout(() => setRatesSavedNotice(false), 3000);
+                    }}
+                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all"
+                  >
+                    Save Custom Pricing Model
+                  </button>
+                </div>
+
+                {/* Global Marketing Broadcast Console */}
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 space-y-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-500/20 rounded-xl flex items-center justify-center border border-amber-500/30">
+                      <Megaphone className="w-5 h-5 text-amber-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black uppercase">Global Marketing Broadcast Console</h3>
+                      <p className="text-xs text-slate-400">Send announcements to all connected client POS dashboards.</p>
+                    </div>
+                  </div>
+
+                  {broadcastNotice && (
+                    <div className="p-3 bg-indigo-950/60 border border-indigo-500/40 rounded-xl text-indigo-300 text-xs font-bold flex items-center gap-2">
+                      <Send className="w-4 h-4 text-indigo-400" /> {broadcastNotice}
+                    </div>
+                  )}
+
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <label className="block text-slate-400 font-bold uppercase text-[10px] mb-1">Headline / Subject</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 🚀 Special Offer: Upgrade to Gold Suite this month!"
+                        value={broadcastHeadline}
+                        onChange={(e) => setBroadcastHeadline(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 font-bold uppercase text-[10px] mb-1">Announcement Details</label>
+                      <textarea
+                        rows={3}
+                        placeholder="Type system notice, feature announcement or discount code details..."
+                        value={broadcastMessage}
+                        onChange={(e) => setBroadcastMessage(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={async () => {
+                      if (!broadcastMessage.trim()) return;
+                      const payload = {
+                        id: crypto.randomUUID(),
+                        headline: broadcastHeadline || '📢 DMi System Announcement',
+                        message: broadcastMessage,
+                        timestamp: new Date().toISOString(),
+                        author: 'Master Admin'
+                      };
+                      localStorage.setItem('dmi_global_marketing_broadcast', JSON.stringify(payload));
+                      try {
+                        await masterService.reportPiracy('SYSTEM_BROADCAST', `[MARKETING ANNOUNCEMENT] ${payload.headline}: ${payload.message}`);
+                      } catch (e) {}
+                      setBroadcastNotice('Broadcast successfully dispatched to all terminals!');
+                      setBroadcastHeadline('');
+                      setBroadcastMessage('');
+                      setTimeout(() => setBroadcastNotice(''), 4000);
+                    }}
+                    className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
+                  >
+                    <Send className="w-4 h-4" /> Broadcast Announcement Now
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {view === 'hrm-master' && (
+            <div className="space-y-8">
+              {/* Header */}
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 bg-indigo-600/20 rounded-2xl flex items-center justify-center border border-indigo-500/30">
+                    <UserCheck className="w-7 h-7 text-indigo-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-black uppercase tracking-tight">Master HRM & Staff Control Hub</h2>
+                    <p className="text-xs text-slate-400">Monitor and manage all staff members, roles, salaries, and attendance across all registered client terminals.</p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setEditingEmployee(null);
+                    setHrmFormData({
+                      businessId: 'DEFAULT_BUSINESS',
+                      shopId: 'Main Branch',
+                      name: '',
+                      email: '',
+                      phone: '',
+                      role: 'Cashier',
+                      salary: 25000,
+                      hireDate: new Date().toISOString().split('T')[0],
+                      status: 'ACTIVE'
+                    });
+                    setIsHrmModalOpen(true);
+                  }}
+                  className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20 self-start md:self-auto"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Add Master Employee
+                </button>
+              </div>
+
+              {/* Master Staff KPI Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Total Registered Staff</span>
+                    <Users className="w-4 h-4 text-indigo-400" />
+                  </div>
+                  <h3 className="text-3xl font-black">{masterEmployees.length}</h3>
+                  <p className="text-[10px] text-slate-500 mt-1">Across all active client branches</p>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Active Duty</span>
+                    <UserCheck className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <h3 className="text-3xl font-black text-emerald-400">
+                    {masterEmployees.filter(e => e.status === 'ACTIVE').length}
+                  </h3>
+                  <p className="text-[10px] text-slate-500 mt-1">Active system user permissions</p>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">On Leave / Inactive</span>
+                    <Clock className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <h3 className="text-3xl font-black text-amber-400">
+                    {masterEmployees.filter(e => e.status === 'ON_LEAVE' || e.status === 'INACTIVE').length}
+                  </h3>
+                  <p className="text-[10px] text-slate-500 mt-1">Pending approval or paused</p>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Monthly Staff Payroll</span>
+                    <DollarSign className="w-4 h-4 text-indigo-400" />
+                  </div>
+                  <h3 className="text-2xl font-black font-mono text-indigo-400">
+                    KES {masterEmployees.reduce((sum, e) => sum + (Number(e.salary) || 0), 0).toLocaleString()}
+                  </h3>
+                  <p className="text-[10px] text-slate-500 mt-1">Combined monthly base salaries</p>
+                </div>
+              </div>
+
+              {/* Employees Table with Controls */}
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 space-y-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-6">
+                  <div>
+                    <h3 className="text-lg font-black uppercase tracking-tight">Staff Registry Directory</h3>
+                    <p className="text-xs text-slate-400">Master view of all cashier, manager, and admin accounts.</p>
+                  </div>
+
+                  <div className="relative w-full md:w-72">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type="text"
+                      placeholder="Search employee, role, or phone..."
+                      value={hrmSearch}
+                      onChange={(e) => setHrmSearch(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs focus:outline-none focus:border-indigo-500 text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                        <th className="py-3 px-4">Employee</th>
+                        <th className="py-3 px-4">Role</th>
+                        <th className="py-3 px-4">Contact</th>
+                        <th className="py-3 px-4">Branch / Business ID</th>
+                        <th className="py-3 px-4">Monthly Salary</th>
+                        <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4 text-right">Master Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 text-xs">
+                      {masterEmployees.filter(e => 
+                        e.name?.toLowerCase().includes(hrmSearch.toLowerCase()) ||
+                        e.role?.toLowerCase().includes(hrmSearch.toLowerCase()) ||
+                        e.phone?.includes(hrmSearch)
+                      ).length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-slate-500 italic">
+                            No employees found in local master directory. Click "Add Master Employee" to register staff records!
+                          </td>
+                        </tr>
+                      ) : (
+                        masterEmployees.filter(e => 
+                          e.name?.toLowerCase().includes(hrmSearch.toLowerCase()) ||
+                          e.role?.toLowerCase().includes(hrmSearch.toLowerCase()) ||
+                          e.phone?.includes(hrmSearch)
+                        ).map((emp) => (
+                          <tr key={emp.id} className="hover:bg-slate-800/40 transition-colors">
+                            <td className="py-3 px-4 font-bold text-white">
+                              <div>{emp.name}</div>
+                              <div className="text-[10px] text-slate-500 font-mono">Hired: {emp.hireDate || 'N/A'}</div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="px-2.5 py-1 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-lg text-[10px] font-bold uppercase">
+                                {emp.role}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-slate-300 font-mono text-[11px]">
+                              <div>{emp.phone || 'No Phone'}</div>
+                              <div className="text-[10px] text-slate-500">{emp.email || ''}</div>
+                            </td>
+                            <td className="py-3 px-4 text-slate-400 font-mono text-[10px]">
+                              <div>{emp.shopId || 'Main Branch'}</div>
+                              <div className="text-slate-600 truncate max-w-[120px]">{emp.businessId}</div>
+                            </td>
+                            <td className="py-3 px-4 font-mono font-bold text-emerald-400">
+                              KES {(Number(emp.salary) || 0).toLocaleString()}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase ${
+                                emp.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                                emp.status === 'ON_LEAVE' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                                'bg-red-500/10 text-red-400 border border-red-500/20'
+                              }`}>
+                                {emp.status}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => {
+                                    setEditingEmployee(emp);
+                                    setHrmFormData({
+                                      businessId: emp.businessId || 'DEFAULT_BUSINESS',
+                                      shopId: emp.shopId || 'Main Branch',
+                                      name: emp.name,
+                                      email: emp.email || '',
+                                      phone: emp.phone || '',
+                                      role: emp.role,
+                                      salary: emp.salary,
+                                      hireDate: emp.hireDate || new Date().toISOString().split('T')[0],
+                                      status: emp.status || 'ACTIVE'
+                                    });
+                                    setIsHrmModalOpen(true);
+                                  }}
+                                  className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors"
+                                  title="Edit Employee"
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+
+                                <button
+                                  onClick={async () => {
+                                    const confirm = window.confirm(`Delete staff member ${emp.name}?`);
+                                    if (confirm) {
+                                      await localDb.deleteEmployee(emp.id);
+                                      setMasterEmployees(localDb.getAllEmployees());
+                                    }
+                                  }}
+                                  className="p-1.5 bg-red-950/40 hover:bg-red-900/60 text-red-400 rounded-lg transition-colors"
+                                  title="Delete Employee"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Add/Edit Modal */}
+              {isHrmModalOpen && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                  <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-lg w-full space-y-6 shadow-2xl">
+                    <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                      <h3 className="text-lg font-black uppercase">
+                        {editingEmployee ? 'Edit Master Staff Member' : 'Add New Master Employee'}
+                      </h3>
+                      <button 
+                        onClick={() => setIsHrmModalOpen(false)}
+                        className="text-slate-500 hover:text-white text-lg font-bold"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <div className="space-y-4 text-xs">
+                      <div>
+                        <label className="block text-slate-400 mb-1 font-bold uppercase text-[10px]">Full Name</label>
+                        <input
+                          type="text"
+                          value={hrmFormData.name}
+                          onChange={(e) => setHrmFormData({ ...hrmFormData, name: e.target.value })}
+                          placeholder="e.g. David Mwangi"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-bold uppercase text-[10px]">Role / Position</label>
+                          <select
+                            value={hrmFormData.role}
+                            onChange={(e) => setHrmFormData({ ...hrmFormData, role: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white"
+                          >
+                            <option value="Cashier">Cashier</option>
+                            <option value="Store Manager">Store Manager</option>
+                            <option value="Accountant">Accountant</option>
+                            <option value="Receptionist">Receptionist</option>
+                            <option value="Supervisor">Supervisor</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-bold uppercase text-[10px]">Monthly Base Salary (KES)</label>
+                          <input
+                            type="number"
+                            value={hrmFormData.salary}
+                            onChange={(e) => setHrmFormData({ ...hrmFormData, salary: Number(e.target.value) })}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-bold uppercase text-[10px]">Phone Number</label>
+                          <input
+                            type="text"
+                            value={hrmFormData.phone}
+                            onChange={(e) => setHrmFormData({ ...hrmFormData, phone: e.target.value })}
+                            placeholder="0712345678"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-400 mb-1 font-bold uppercase text-[10px]">Status</label>
+                          <select
+                            value={hrmFormData.status}
+                            onChange={(e) => setHrmFormData({ ...hrmFormData, status: e.target.value as any })}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white"
+                          >
+                            <option value="ACTIVE">ACTIVE</option>
+                            <option value="ON_LEAVE">ON LEAVE</option>
+                            <option value="INACTIVE">INACTIVE</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-3 border-t border-slate-800 pt-4">
+                      <button
+                        onClick={() => setIsHrmModalOpen(false)}
+                        className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!hrmFormData.name.trim()) return;
+                          if (editingEmployee) {
+                            await localDb.updateEmployee(editingEmployee.id, hrmFormData);
+                          } else {
+                            await localDb.addEmployee(hrmFormData);
+                          }
+                          setMasterEmployees(localDb.getAllEmployees());
+                          setIsHrmModalOpen(false);
+                          setEditingEmployee(null);
+                        }}
+                        className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs uppercase"
+                      >
+                        Save Staff Record
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1664,8 +2519,351 @@ export const MasterAdmin: React.FC<MasterAdminProps> = ({ onLogout }) => {
             <MasterDatabaseSchema />
           )}
 
+          {/* Real-Time Notification Center View */}
+          {view === 'notifications' && (
+            <div className="space-y-6">
+              {/* Header Banner */}
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="space-y-2 relative z-10">
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1 bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 rounded-full text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
+                      <BellRing className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+                      Supabase Real-Time Event Bus
+                    </span>
+                    <span className="text-xs text-slate-400 font-mono">
+                      Active Channel: <code className="text-emerald-400">master-piracy-alerts &amp; master-licenses</code>
+                    </span>
+                  </div>
+                  <h2 className="text-2xl md:text-3xl font-black uppercase tracking-tight">
+                    Real-Time Notification & Action Center
+                  </h2>
+                  <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
+                    Live operational hub capturing business activations, license expiry countdowns, and security alerts from all retail shop instances across Kenya.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 relative z-10 shrink-0">
+                  <button
+                    onClick={handleTriggerTestAlert}
+                    className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-amber-500/20"
+                  >
+                    <Zap className="w-4 h-4 fill-current" />
+                    Simulate Real-Time Alert
+                  </button>
+
+                  <button
+                    onClick={handleMarkAllNotificationsRead}
+                    disabled={unreadCount === 0}
+                    className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 disabled:opacity-50"
+                  >
+                    <CheckCheck className="w-4 h-4 text-emerald-400" />
+                    Mark All as Read
+                  </button>
+                </div>
+              </div>
+
+              {/* Filter Pills */}
+              <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2 flex items-center gap-1.5">
+                    <Filter className="w-3.5 h-3.5 text-indigo-400" /> Filter:
+                  </span>
+                  {[
+                    { id: 'ALL', label: 'All Alerts', count: notifications.length },
+                    { id: 'BUSINESS_ACTIVATION', label: 'Business Activations', count: notifications.filter(n => n.category === 'BUSINESS_ACTIVATION').length },
+                    { id: 'LICENSE_EXPIRY', label: 'License Expiry', count: notifications.filter(n => n.category === 'LICENSE_EXPIRY').length },
+                    { id: 'SECURITY_PIRACY', label: 'Security Breaches', count: notifications.filter(n => n.category === 'SECURITY_PIRACY').length }
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => setNotificationFilter(f.id as any)}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                        notificationFilter === f.id 
+                          ? 'bg-indigo-600 text-white shadow-md' 
+                          : 'bg-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span>{f.label}</span>
+                      <span className="px-1.5 py-0.2 bg-slate-950/60 rounded text-[10px] font-mono">
+                        {f.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="text-xs text-slate-400 font-mono flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                  <span>Unread Notifications: <strong className="text-white">{unreadCount}</strong></span>
+                </div>
+              </div>
+
+              {/* Notifications List */}
+              <div className="space-y-3">
+                {notifications
+                  .filter(n => notificationFilter === 'ALL' || n.category === notificationFilter)
+                  .length === 0 ? (
+                  <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center text-slate-500 space-y-3">
+                    <Bell className="w-10 h-10 text-slate-600 mx-auto" />
+                    <p className="text-sm font-bold uppercase tracking-wider text-slate-400">
+                      No Notifications Found for Selected Filter
+                    </p>
+                    <p className="text-xs max-w-md mx-auto text-slate-500">
+                      You are completely caught up! Click "Simulate Real-Time Alert" above to trigger a test business activation, expiry, or anti-piracy security alert.
+                    </p>
+                  </div>
+                ) : (
+                  notifications
+                    .filter(n => notificationFilter === 'ALL' || n.category === notificationFilter)
+                    .map(n => (
+                      <div
+                        key={n.id}
+                        className={`p-5 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                          !n.read 
+                            ? 'bg-slate-900/90 border-indigo-500/40 shadow-lg shadow-indigo-500/5' 
+                            : 'bg-slate-900/40 border-slate-800/80 opacity-80'
+                        }`}
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className={`p-3 rounded-2xl shrink-0 mt-0.5 ${
+                            n.category === 'SECURITY_PIRACY' ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' :
+                            n.category === 'BUSINESS_ACTIVATION' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
+                            'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                          }`}>
+                            {n.category === 'SECURITY_PIRACY' && <ShieldAlert className="w-6 h-6 animate-pulse" />}
+                            {n.category === 'BUSINESS_ACTIVATION' && <Building2 className="w-6 h-6" />}
+                            {n.category === 'LICENSE_EXPIRY' && <Clock className="w-6 h-6" />}
+                          </div>
+
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                                n.severity === 'CRITICAL' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse' :
+                                n.severity === 'WARNING' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                                'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
+                              }`}>
+                                {n.severity}
+                              </span>
+
+                              <span className="text-[10px] text-slate-500 font-mono">
+                                {new Date(n.timestamp).toLocaleString()}
+                              </span>
+
+                              {!n.read && (
+                                <span className="px-2 py-0.5 bg-indigo-600 text-white text-[9px] font-black uppercase rounded-full tracking-wider">
+                                  NEW
+                                </span>
+                              )}
+                            </div>
+
+                            <h4 className="text-sm font-black text-white">{n.title}</h4>
+                            <p className="text-xs text-slate-300 leading-relaxed font-sans">{n.message}</p>
+
+                            {n.licenseKey && (
+                              <div className="flex items-center gap-2 pt-1 font-mono text-[11px] text-slate-400">
+                                <span>Key: <code className="text-indigo-400 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">{n.licenseKey}</code></span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex flex-wrap items-center gap-2 shrink-0 border-t md:border-t-0 border-slate-800 pt-3 md:pt-0">
+                          {n.actionType === 'APPROVE_LICENSE' && (
+                            <button
+                              onClick={() => handleApproveLicenseNotification(n.licenseKey)}
+                              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase rounded-xl transition-all shadow-md flex items-center gap-1.5"
+                            >
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              Approve & Activate
+                            </button>
+                          )}
+
+                          {n.actionType === 'EXTEND_EXPIRY' && (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleExtendLicenseNotification(n.licenseKey, 30)}
+                                className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase rounded-xl transition-all shadow-md"
+                              >
+                                Extend (+30 Days)
+                              </button>
+                              <button
+                                onClick={() => handleExtendLicenseNotification(n.licenseKey, 365)}
+                                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-indigo-400 border border-indigo-500/30 font-bold text-xs uppercase rounded-xl transition-all"
+                              >
+                                +1 Year
+                              </button>
+                            </div>
+                          )}
+
+                          {n.actionType === 'RESOLVE_PIRACY' && (
+                            <button
+                              onClick={() => handleResolvePiracyNotification(n.metadata?.id)}
+                              className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs uppercase rounded-xl transition-all shadow-md flex items-center gap-1.5"
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                              Resolve Incident
+                            </button>
+                          )}
+
+                          {!n.read && (
+                            <button
+                              onClick={() => handleMarkNotificationRead(n.id)}
+                              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white font-bold text-xs uppercase rounded-xl transition-colors"
+                            >
+                              Dismiss
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                )}
+              </div>
+            </div>
+          )}
+
         </div>
       </main>
+
+      {/* Slide-Over Notification Drawer */}
+      <AnimatePresence>
+        {isNotificationDrawerOpen && (
+          <div className="fixed inset-0 z-[100] flex justify-end bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="bg-slate-900 border-l border-slate-800 w-full max-w-md h-full flex flex-col shadow-2xl"
+            >
+              {/* Drawer Header */}
+              <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+                <div className="flex items-center gap-2.5">
+                  <Bell className="w-5 h-5 text-amber-400" />
+                  <div>
+                    <h3 className="font-black text-sm uppercase tracking-wider text-white">
+                      Live Notification Alerts
+                    </h3>
+                    <p className="text-[10px] text-slate-400">Real-Time Supabase Listener Active</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsNotificationDrawerOpen(false)}
+                  className="p-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Drawer Content */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {notifications.length === 0 ? (
+                  <div className="p-8 text-center text-slate-500 italic text-xs">
+                    No active notifications registered.
+                  </div>
+                ) : (
+                  notifications.map(n => (
+                    <div
+                      key={n.id}
+                      className={`p-4 rounded-xl border space-y-2 text-xs transition-all ${
+                        !n.read ? 'bg-slate-800/90 border-indigo-500/40' : 'bg-slate-900/50 border-slate-800 text-slate-400'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className={`px-2 py-0.5 rounded font-black uppercase ${
+                          n.category === 'SECURITY_PIRACY' ? 'bg-rose-500/20 text-rose-400' :
+                          n.category === 'BUSINESS_ACTIVATION' ? 'bg-emerald-500/20 text-emerald-400' :
+                          'bg-amber-500/20 text-amber-400'
+                        }`}>
+                          {n.category.replace('_', ' ')}
+                        </span>
+                        <span className="font-mono text-slate-500">{new Date(n.timestamp).toLocaleTimeString()}</span>
+                      </div>
+
+                      <div className="font-bold text-white text-xs">{n.title}</div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">{n.message}</p>
+
+                      <div className="pt-2 flex items-center justify-between border-t border-slate-800">
+                        {n.actionType === 'APPROVE_LICENSE' && (
+                          <button
+                            onClick={() => handleApproveLicenseNotification(n.licenseKey)}
+                            className="px-2.5 py-1 bg-emerald-600 text-white font-bold text-[10px] uppercase rounded-lg"
+                          >
+                            Approve Now
+                          </button>
+                        )}
+                        {n.actionType === 'EXTEND_EXPIRY' && (
+                          <button
+                            onClick={() => handleExtendLicenseNotification(n.licenseKey, 30)}
+                            className="px-2.5 py-1 bg-indigo-600 text-white font-bold text-[10px] uppercase rounded-lg"
+                          >
+                            Extend +30 Days
+                          </button>
+                        )}
+                        {n.actionType === 'RESOLVE_PIRACY' && (
+                          <button
+                            onClick={() => handleResolvePiracyNotification(n.metadata?.id)}
+                            className="px-2.5 py-1 bg-rose-600 text-white font-bold text-[10px] uppercase rounded-lg"
+                          >
+                            Resolve Security
+                          </button>
+                        )}
+
+                        {!n.read && (
+                          <button
+                            onClick={() => handleMarkNotificationRead(n.id)}
+                            className="text-[10px] text-slate-400 hover:text-white uppercase font-bold"
+                          >
+                            Mark Read
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Drawer Footer */}
+              <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between">
+                <button
+                  onClick={() => {
+                    setIsNotificationDrawerOpen(false);
+                    setView('notifications');
+                  }}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl text-center"
+                >
+                  View Full Notification Center
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Real-Time Alert Toast Banner */}
+      <AnimatePresence>
+        {alertToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 50, scale: 0.9 }}
+            className="fixed bottom-8 right-8 z-[200] max-w-sm bg-slate-900 border-2 border-indigo-500 rounded-2xl p-4 shadow-2xl shadow-indigo-500/20 text-white space-y-2"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BellRing className="w-4 h-4 text-amber-400 animate-bounce" />
+                <span className="font-black text-xs uppercase tracking-wider text-indigo-400">
+                  Real-Time Master Event
+                </span>
+              </div>
+              <button onClick={() => setAlertToast(null)} className="p-1 hover:bg-slate-800 rounded">
+                <X className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+            </div>
+            <div className="font-bold text-xs text-white">{alertToast.title}</div>
+            <p className="text-[11px] text-slate-300 leading-snug">{alertToast.message}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Copyright Footer */}
       <footer className="bg-slate-900 border-t border-slate-800 px-8 py-4 flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">

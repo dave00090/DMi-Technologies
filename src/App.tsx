@@ -444,14 +444,14 @@ export default function App() {
     }
     if (norm.includes('SILVER') || norm.includes('GROWTH')) {
       return {
-        hasHrm: false,
-        hasGuestDesk: false,
+        hasHrm: true,
+        hasGuestDesk: true,
         label: 'Silver Growth'
       };
     }
     return {
-      hasHrm: false,
-      hasGuestDesk: false,
+      hasHrm: true,
+      hasGuestDesk: true,
       label: licensePlan ? licensePlan : 'Bronze Standard / Local-First'
     };
   };

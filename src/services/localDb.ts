@@ -542,6 +542,9 @@ export const localDb = {
   },
 
   // Employees
+  getAllEmployees: (): Employee[] => {
+    return getLocal<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
+  },
   getEmployees: (businessId: string, shopId?: string): Employee[] => {
     const all = getLocal<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
     return all.filter(e => e.businessId === businessId && (!shopId || e.shopId === shopId));

@@ -266,31 +266,32 @@ export const Layout: React.FC<LayoutProps> = ({
             {user && (
               <div className="flex items-center gap-2 sm:gap-3 bg-muted/30 p-1 rounded-2xl border border-border">
                 {/* 1. WIFI SIGN STATUS INDICATOR */}
-                <div 
-                  className={`p-2 rounded-xl flex items-center gap-2 transition-all text-xs font-bold leading-none ${
+                <button 
+                  onClick={() => setIsSyncOpen(true)}
+                  className={`p-2 rounded-xl flex items-center gap-2 transition-all text-xs font-bold leading-none cursor-pointer ${
                     syncStats.isOnline 
-                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/10' 
-                      : 'bg-neutral-500/10 text-neutral-400 dark:text-neutral-500 border border-neutral-500/10'
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20' 
+                      : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'
                   }`}
-                  title={syncStats.isOnline ? "System is Online & Connected to Cloud" : "System is Offline (Transactions are Cached Perfectly)"}
+                  title={syncStats.isOnline ? "System is Online & Connected to Cloud - Click for Sync Diagnostic Center" : "System is Offline (Transactions are Cached Perfectly) - Click for Diagnostics & Troubleshooting"}
                 >
                   <span className="relative flex h-2.5 w-2.5">
                     <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                      syncStats.isOnline ? 'bg-emerald-500' : 'bg-neutral-400'
+                      syncStats.isOnline ? 'bg-emerald-500' : 'bg-rose-500'
                     }`}></span>
                     <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
-                      syncStats.isOnline ? 'bg-emerald-600' : 'bg-neutral-500'
+                      syncStats.isOnline ? 'bg-emerald-600' : 'bg-rose-600'
                     }`}></span>
                   </span>
                   {syncStats.isOnline ? (
                     <Wifi className="w-4 h-4 text-emerald-500" />
                   ) : (
-                    <WifiOff className="w-4 h-4 text-neutral-400" />
+                    <WifiOff className="w-4 h-4 text-rose-500" />
                   )}
                   <span className="hidden sm:inline-block">
                     {syncStats.isOnline ? "Online" : "Offline"}
                   </span>
-                </div>
+                </button>
 
                 {/* 2. MANUAL INSTANT SYNC BUTTON */}
                 <button
