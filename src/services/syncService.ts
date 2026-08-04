@@ -223,24 +223,32 @@ class SyncService {
 
   private async executeHealthPing(targetUrl: string, timeoutMs: number = 4000): Promise<{ status: number; isHtml: boolean }> {
     const isSupabase = targetUrl.includes('.supabase.co') || targetUrl.includes('/rest/v1');
-    const apiKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+    const apiKey = import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('dmi_pos_supabase_anon_key') || '';
 
     if (isSupabase) {
       const cleanUrl = targetUrl.replace(/\/+$/, '').replace(/\/rest\/v1\/?$/, '');
       const client = axios.create({
         baseURL: cleanUrl,
         timeout: timeoutMs,
+        validateStatus: (status) => status < 500,
         headers: apiKey ? {
           'apikey': apiKey,
           'Authorization': `Bearer ${apiKey}`
         } : {}
       });
-      const res = await client.get('/rest/v1/');
-      const isHtml = typeof res.data === 'string' && (res.data.includes('<!DOCTYPE html') || res.data.includes('<html'));
-      return { status: res.status, isHtml };
+      try {
+        const res = await client.get('/rest/v1/');
+        const isHtml = typeof res.data === 'string' && (res.data.includes('<!DOCTYPE html') || res.data.includes('<html'));
+        return { status: res.status, isHtml };
+      } catch (err: any) {
+        if (err.response) {
+          return { status: err.response.status, isHtml: false };
+        }
+        throw err;
+      }
     } else {
       const client = this.getApiClient();
-      const res = await client.get('/api/health', { timeout: timeoutMs });
+      const res = await client.get('/api/health', { timeout: timeoutMs, validateStatus: (status) => status < 500 });
       const isHtml = typeof res.data === 'string' && (res.data.includes('<!DOCTYPE html') || res.data.includes('<html'));
       return { status: res.status, isHtml };
     }
@@ -264,14 +272,19 @@ class SyncService {
 
     try {
       const ping = await this.executeHealthPing(currentDisplayUrl, 4000);
-      const online = (ping.status >= 200 && ping.status < 300) && !ping.isHtml;
+      const isAuthRequired = ping.status === 401 || ping.status === 403;
+      const online = ((ping.status >= 200 && ping.status < 300) || isAuthRequired) && !ping.isHtml;
       this.updateOnlineStatus(online || navigator.onLine);
       if (online) {
-        this.lastConnectionError = '';
+        if (isAuthRequired) {
+          this.lastConnectionError = `Supabase Gateway live (${ping.status} Auth Required - Set VITE_SUPABASE_ANON_KEY).`;
+        } else {
+          this.lastConnectionError = '';
+        }
       } else if (ping.isHtml) {
         this.lastConnectionError = 'Server URL points to static HTML. Operating in Local-First mode.';
       } else {
-        this.lastConnectionError = `Server returned status ${ping.status}`;
+        this.lastConnectionError = `Server returned status HTTP ${ping.status}`;
       }
       return online || isSupabase;
     } catch (e: any) {
@@ -351,16 +364,19 @@ class SyncService {
         const ping = await this.executeHealthPing(url, 5000);
         pingLatency = Date.now() - pingStart;
         isHtmlResponse = ping.isHtml;
-        isServerReachable = (ping.status >= 200 && ping.status < 300) && !isHtmlResponse;
+        const isAuthRequired = ping.status === 401 || ping.status === 403;
+        isServerReachable = ((ping.status >= 200 && ping.status < 300) || isAuthRequired) && !isHtmlResponse;
 
         steps.push({
           name: 'Server Ping & Latency',
           status: isServerReachable ? 'PASS' : 'WARN',
-          message: isServerReachable 
-            ? `Server responded with status HTTP ${ping.status} in ${pingLatency}ms.` 
-            : isHtmlResponse 
-              ? 'Server returned static web page. Operating safely in Local-First Standalone Mode.'
-              : `Server returned status HTTP ${ping.status}`,
+          message: (ping.status >= 200 && ping.status < 300)
+            ? `Supabase Server responded with HTTP ${ping.status} in ${pingLatency}ms.` 
+            : isAuthRequired
+              ? `Supabase Gateway REACHABLE in ${pingLatency}ms (HTTP ${ping.status} - Live endpoint. Set VITE_SUPABASE_ANON_KEY).`
+              : isHtmlResponse 
+                ? 'Server returned static web page. Operating safely in Local-First Standalone Mode.'
+                : `Server returned status HTTP ${ping.status}`,
           latencyMs: pingLatency
         });
       } catch (e: any) {
