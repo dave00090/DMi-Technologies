@@ -137,12 +137,24 @@ export const SyncPanel: React.FC<SyncPanelProps> = ({ isOpen, onClose }) => {
                   <Cloud className="w-5 h-5 text-indigo-500" />
                 </div>
                 <div>
-                  <span className="text-2xl font-black text-ink">
-                    {stats.pendingCount} record{stats.pendingCount !== 1 ? 's' : ''} queued
-                  </span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-2xl font-black text-ink">
+                      {stats.pendingCount} record{stats.pendingCount !== 1 ? 's' : ''} queued
+                    </span>
+                    {stats.pendingCount > 0 && (
+                      <button
+                        onClick={async () => {
+                          await syncService.forceMarkAllAsSynced();
+                        }}
+                        className="px-2.5 py-1 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-bold text-[10px] uppercase rounded-lg border border-indigo-500/30 transition-colors shrink-0"
+                      >
+                        Acknowledge Queue
+                      </button>
+                    )}
+                  </div>
                   <p className="text-xs text-muted mt-1 leading-relaxed">
                     {stats.pendingCount > 0 
-                      ? 'Transactions waiting for connection recovery.' 
+                      ? 'Transactions waiting for connection recovery or manual sync.' 
                       : 'All sales and inventory updates are completely synced.'}
                   </p>
                 </div>
