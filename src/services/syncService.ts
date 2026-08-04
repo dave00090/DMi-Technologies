@@ -59,7 +59,7 @@ class SyncService {
   public getBaseUrl(): string {
     const saved = localStorage.getItem('dmi_pos_sync_server_url');
     let url = '';
-    
+
     if (saved) {
       url = saved;
     } else if (window.location.protocol === 'file:') {
@@ -72,13 +72,13 @@ class SyncService {
     if (url.includes('http://https') || url.includes('http://http') || url.includes('/https') || url.includes('//:')) {
       let clean = url.trim();
       const isSecure = /https/i.test(clean.substring(0, 25));
-      
+
       // Remove bad leading headers recursively
       for (let i = 0; i < 4; i++) {
         clean = clean.replace(/^(https?|http|ftp|file)[\s:/\\+]+/i, '');
       }
       clean = clean.replace(/^[:/\\ ]+/, '').replace(/[:/\\ ]+$/, '');
-      
+
       url = (isSecure ? 'https://' : 'http://') + clean;
       if (saved) {
         localStorage.setItem('dmi_pos_sync_server_url', url);
@@ -98,7 +98,7 @@ class SyncService {
         }
       }
     }
-    
+
     return url;
   }
 
@@ -111,6 +111,23 @@ class SyncService {
       return 'https://ais-pre-kayb6z7vprmlkln2iwpxb5-430844239449.europe-west2.run.app';
     }
     return window.location.origin;
+  }
+
+  /** Public wrapper so UI code (e.g. a Settings screen) can check the resolved key. */
+  public getSupabaseAnonKey(): string {
+    return this.resolveSupabaseAnonKey();
+  }
+
+  public setSupabaseAnonKey(key: string) {
+    const clean = key.trim();
+    if (!clean) {
+      localStorage.removeItem('dmi_pos_supabase_anon_key');
+      this.addLog('INFO', 'Supabase anon key cleared. Falling back to build-time VITE_SUPABASE_ANON_KEY (if set).');
+    } else {
+      localStorage.setItem('dmi_pos_supabase_anon_key', clean);
+      this.addLog('INFO', 'Supabase anon key configured for this device.');
+    }
+    this.checkConnectivity();
   }
 
   public setBaseUrl(url: string) {
@@ -132,7 +149,7 @@ class SyncService {
     hostPart = hostPart.replace(/^[:/\\ ]+/, '').replace(/[:/\\ ]+$/, '');
 
     const sanitized = (isSecure ? 'https://' : 'http://') + hostPart;
-    
+
     this.syncLogs = this.syncLogs.filter(log => log.type !== 'ERROR');
     localStorage.setItem('dmi_pos_sync_server_url', sanitized);
 
@@ -221,12 +238,65 @@ class SyncService {
     this.notify();
   }
 
+  /**
+   * Resolves the Supabase anon key the SAME way syncNow() effectively does
+   * (via the shared `supabase` client), so the healthcheck can never disagree
+   * with the code path that actually performs sync. Order of preference:
+   *   1. VITE_SUPABASE_ANON_KEY env var (baked in at build time)
+   *   2. A key manually saved to localStorage (manual override / debugging)
+   *   3. The key already embedded in the shared `supabase` client from
+   *      masterService.ts — since a successful sync proves that client works,
+   *      this is the most reliable fallback when the env var wasn't baked in.
+   */
+  private resolveSupabaseAnonKey(): string {
+    const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+    if (envKey) return envKey;
+
+    const storedKey = localStorage.getItem('dmi_pos_supabase_anon_key') || '';
+    if (storedKey) return storedKey;
+
+    // Last resort: pull the key straight off the already-working shared client.
+    // supabase-js doesn't officially expose this, so we defensively probe a
+    // couple of internal shapes and fall back to '' if none match.
+    const clientAny = supabase as any;
+    return (
+      clientAny?.supabaseKey ||
+      clientAny?.rest?.headers?.apikey ||
+      clientAny?.restUrl?.apikey ||
+      ''
+    );
+  }
+
   private async executeHealthPing(targetUrl: string, timeoutMs: number = 4000): Promise<{ status: number; isHtml: boolean }> {
     const isSupabase = targetUrl.includes('.supabase.co') || targetUrl.includes('/rest/v1');
-    const apiKey = import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('dmi_pos_supabase_anon_key') || '';
 
     if (isSupabase) {
+      // Prefer pinging THROUGH the actual shared client when the configured
+      // URL matches it — this guarantees the healthcheck and real sync calls
+      // are indistinguishable in terms of auth. Only fall back to a manual
+      // axios call (e.g. for a custom/self-hosted URL) when they differ.
       const cleanUrl = targetUrl.replace(/\/+$/, '').replace(/\/rest\/v1\/?$/, '');
+      const apiKey = this.resolveSupabaseAnonKey();
+
+      const customUrl = localStorage.getItem('dmi_pos_sync_server_url') || '';
+      const usesSharedClient = !customUrl || (import.meta.env.VITE_SUPABASE_URL || '').replace(/\/+$/, '') === cleanUrl;
+
+      if (usesSharedClient) {
+        try {
+          let { error, status } = await supabase.from('cloud_sync_state').select('id').limit(1);
+          if (error && (status === 404 || (error as any).code === '42P01')) {
+            ({ error, status } = await supabase.from('sales').select('id').limit(1));
+          }
+          if (error) {
+            const httpStatus = (error as any).status || status || 400;
+            return { status: httpStatus, isHtml: false };
+          }
+          return { status: 200, isHtml: false };
+        } catch (err: any) {
+          // Fall through to the manual axios ping below as a last resort.
+        }
+      }
+
       const client = axios.create({
         baseURL: cleanUrl,
         timeout: timeoutMs,
@@ -237,7 +307,10 @@ class SyncService {
         } : {}
       });
       try {
-        const res = await client.get('/rest/v1/');
+        let res = await client.get('/rest/v1/cloud_sync_state?select=id&limit=1');
+        if (res.status === 404) {
+          res = await client.get('/rest/v1/sales?select=id&limit=1');
+        }
         const isHtml = typeof res.data === 'string' && (res.data.includes('<!DOCTYPE html') || res.data.includes('<html'));
         return { status: res.status, isHtml };
       } catch (err: any) {
@@ -309,8 +382,8 @@ class SyncService {
     steps.push({
       name: 'Network Connection',
       status: isDeviceOnline ? 'PASS' : 'FAIL',
-      message: isDeviceOnline 
-        ? 'Local Wi-Fi / Ethernet adapter is active and online.' 
+      message: isDeviceOnline
+        ? 'Local Wi-Fi / Ethernet adapter is active and online.'
         : 'Device appears offline. Reconnect your Wi-Fi or Ethernet cable.'
     });
 
@@ -371,10 +444,10 @@ class SyncService {
           name: 'Server Ping & Latency',
           status: isServerReachable ? 'PASS' : 'WARN',
           message: (ping.status >= 200 && ping.status < 300)
-            ? `Supabase Server responded with HTTP ${ping.status} in ${pingLatency}ms.` 
+            ? `Supabase Server responded with HTTP ${ping.status} in ${pingLatency}ms.`
             : isAuthRequired
               ? `Supabase Gateway REACHABLE in ${pingLatency}ms (HTTP ${ping.status} - Live endpoint. Set VITE_SUPABASE_ANON_KEY).`
-              : isHtmlResponse 
+              : isHtmlResponse
                 ? 'Server returned static web page. Operating safely in Local-First Standalone Mode.'
                 : `Server returned status HTTP ${ping.status}`,
           latencyMs: pingLatency
@@ -404,8 +477,8 @@ class SyncService {
       overallStatus: isServerReachable ? 'ONLINE' : 'OFFLINE_STANDALONE',
       displayUrl: url,
       steps,
-      troubleshootingSteps: troubleshootingSteps.length > 0 
-        ? troubleshootingSteps 
+      troubleshootingSteps: troubleshootingSteps.length > 0
+        ? troubleshootingSteps
         : ['All system checks passed! Transactions are saved locally and synced with cloud database when connected.']
     };
   }
@@ -413,7 +486,7 @@ class SyncService {
   public getPendingCount(): number {
     let count = 0;
     const tables = Object.values(STORAGE_KEYS).filter(k => k !== STORAGE_KEYS.SYNC_STATS);
-    
+
     for (const tableKey of tables) {
       const all = getLocal<any[]>(tableKey, []);
       const unsynced = all.filter(item => item && item.synced === false);
@@ -469,7 +542,7 @@ class SyncService {
     this.intervalId = setInterval(async () => {
       const wasOnline = this.isOnlineState;
       const online = await this.checkConnectivity();
-      
+
       if (online && !wasOnline && !this.isSyncing) {
         this.addLog('INFO', 'Active internet connection recovered! Auto-syncing database immediately...');
         this.syncNow(false);
@@ -539,7 +612,7 @@ class SyncService {
       let activeSupabase = supabase;
       if (customUrl && customUrl.includes('.supabase.co')) {
         const cleanUrl = customUrl.replace(/\/+$/, '').replace(/\/rest\/v1\/?$/, '');
-        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+        const anonKey = this.resolveSupabaseAnonKey();
         if (anonKey) {
           activeSupabase = createClient(cleanUrl, anonKey);
         }
