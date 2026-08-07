@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Lock, ShieldCheck, AlertCircle, Store, Info, Award, TrendingUp, Layers, CheckCircle, HelpCircle, DollarSign, Copy, ArrowLeft, Smartphone } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../services/db';
+import { localDb } from '../services/localDb';
+import { syncService } from '../services/syncService';
 import { SafeImage } from './SafeImage';
 import { masterService, supabase } from '../services/masterService';
 
@@ -352,7 +354,17 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
       const result = await masterService.verifyLicense(cleanPin, machineId, domain);
       if (result.success) {
         localStorage.setItem('dmi_pos_license_key', cleanPin);
+
+        const businessId = result.data?.business_id || result.data?.id || `biz_${cleanPin}`;
+        localDb.setActiveBusinessId(businessId);
+
         await db.activate('8124'); // Internal trigger to mark as activated locally
+
+        // Instantly download and sync all business data onto this laptop/device
+        try {
+          await syncService.syncNow(true);
+        } catch (sErr) {}
+
         onActivated();
       } else {
         setError(result.message || 'Invalid Activation PIN or License Key');

@@ -33,6 +33,7 @@ import { MasterLogin } from './components/MasterLogin';
 import { PenaltyScreen } from './components/PenaltyScreen';
 import { SubscriptionLockScreen } from './components/SubscriptionLockScreen';
 import { masterService, supabase } from './services/masterService';
+import { syncService } from './services/syncService';
 
 import { InvoicesTab } from './components/InvoicesTab';
 import { GuestDeskPanel } from './components/GuestDeskPanel';
@@ -123,7 +124,7 @@ export default function App() {
               if (result.data.expires_at) setLicenseExpiryDate(result.data.expires_at);
               setLicensePlan(result.data.plan_type);
             }
-          } else if (result.isLocked || result.securityBreach) {
+          } else if ((result as any).isLocked || (result as any).securityBreach) {
             setIsSystemLocked(true);
             // If explicitly revoked by server, we should also deactivate local trigger
             if (result.message?.includes('Revoked') || result.message?.includes('Deleted')) {
@@ -137,7 +138,13 @@ export default function App() {
           if (result.data) {
             setLicenseExpiryDate(result.data.expires_at);
             setLicensePlan(result.data.plan_type);
+            const targetBizId = result.data.business_id || result.data.id;
+            if (targetBizId && targetBizId !== activeBusinessId) {
+              localDb.setActiveBusinessId(targetBizId);
+              setActiveBusinessId(targetBizId);
+            }
           }
+          syncService.syncNow();
         }
       }
     };

@@ -45,6 +45,7 @@ export interface License {
   authorized_domain: string | null;
   system_name: string;
   system_type?: string;
+  business_id?: string | null;
   created_at: string;
   last_heartbeat: string | null;
   penalty_amount: number;
@@ -171,31 +172,33 @@ export const masterService = {
         }
       }
 
-      // Anti-Piracy Check
-      if (data.machine_id && data.machine_id !== machineId) {
-        await masterService.reportPiracy(data.id, `Unauthorized hardware change detected. Original: ${data.machine_id}, New: ${machineId}`);
-        return { success: false, message: 'Hardware Mismatch - Possible Unauthorized Copy', securityBreach: true };
-      }
+      // Determine active business ID associated with this license
+      const effectiveBusinessId = data.business_id || localStorage.getItem('dmi_pos_active_business_id') || data.id;
 
-      // Update Heartbeat and Sync Cache
-      await supabase.from('licenses').update({
-        last_heartbeat: new Date().toISOString(),
-        machine_id: data.machine_id || machineId,
-        authorized_domain: data.authorized_domain || domain
-      }).eq('id', data.id);
+      // Update Heartbeat, Machine ID & Business Mapping across devices
+      try {
+        await supabase.from('licenses').update({
+          last_heartbeat: new Date().toISOString(),
+          machine_id: machineId,
+          authorized_domain: domain || data.authorized_domain,
+          business_id: effectiveBusinessId
+        }).eq('id', data.id);
+      } catch (e) {}
+
+      const updatedData = { ...data, business_id: effectiveBusinessId };
 
       // Save to offline cache
       try {
         localStorage.setItem(cacheKey, btoa(JSON.stringify({
           timestamp: new Date().toISOString(),
           gracePeriod: data.grace_period_days || OFFLINE_GRACE_DAYS,
-          data: data
+          data: updatedData
         })));
       } catch (e) {
         // Silently fail if quota exceeded
       }
 
-      return { success: true, data };
+      return { success: true, data: updatedData };
     } catch (err) {
       // Fail-over to cache or auto-provision on server network error
       let cached = null;
