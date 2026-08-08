@@ -39,6 +39,7 @@ export const MasterDatabaseSchema: React.FC = () => {
     payment_status VARCHAR(50) DEFAULT 'PENDING',
     payment_phone VARCHAR(50),
     mpesa_reference VARCHAR(100),
+    business_id VARCHAR(255),
     last_heartbeat TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -46,6 +47,7 @@ export const MasterDatabaseSchema: React.FC = () => {
 -- Ensure backwards-compatible columns
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS expiry_date DATE;
 ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.licenses ADD COLUMN IF NOT EXISTS business_id VARCHAR(255);
 
 -- Enable RLS & Indexes
 ALTER TABLE public.licenses ENABLE ROW LEVEL SECURITY;
@@ -102,9 +104,12 @@ END $$;`
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Ensure both total and total_amount exist and are synced
+-- Ensure backwards-compatible columns exist
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS items JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS total NUMERIC(15, 2) DEFAULT 0.00;
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS total_amount NUMERIC(15, 2) DEFAULT 0.00;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS tax_amount NUMERIC(15, 2) DEFAULT 0.00;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5, 2) DEFAULT 16.00;
 UPDATE public.sales SET total = COALESCE(total, total_amount, 0), total_amount = COALESCE(total_amount, total, 0) WHERE total IS NULL OR total_amount IS NULL;
 
 -- Enable RLS & Indexes
@@ -211,10 +216,10 @@ CREATE POLICY "Allow backup syncing" ON public.cloud_sync_state
     {
       name: 'businesses & shops',
       description: 'Stores profile metadata, operational configurations, and outlet branches of client local-first installations.',
-      sql: `CREATE TABLE IF NOT EXISTS businesses (
+      sql: `CREATE TABLE IF NOT EXISTS public.businesses (
     id VARCHAR(255) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    type VARCHAR(100) NOT NULL,
+    type VARCHAR(100) NOT NULL, -- 'retail', 'restaurant', 'hotel', 'hardware'
     currency VARCHAR(20) DEFAULT 'KSh',
     tax_rate NUMERIC(5, 2) DEFAULT 16.00,
     address TEXT,
@@ -223,9 +228,9 @@ CREATE POLICY "Allow backup syncing" ON public.cloud_sync_state
     synced BOOLEAN DEFAULT false
 );
 
-CREATE TABLE IF NOT EXISTS shops (
+CREATE TABLE IF NOT EXISTS public.shops (
     id VARCHAR(255) PRIMARY KEY,
-    business_id VARCHAR(255) REFERENCES businesses(id) ON DELETE CASCADE,
+    business_id VARCHAR(255) REFERENCES public.businesses(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     location TEXT,
     phone VARCHAR(50)
@@ -234,18 +239,18 @@ CREATE TABLE IF NOT EXISTS shops (
     {
       name: 'products & variants',
       description: 'Holds stock inventory quantities, Barcode scan records, buying rates, and customized consumer pricing structures.',
-      sql: `CREATE TABLE IF NOT EXISTS products (
+      sql: `CREATE TABLE IF NOT EXISTS public.products (
     id VARCHAR(255) PRIMARY KEY,
-    business_id VARCHAR(255) REFERENCES businesses(id) ON DELETE CASCADE,
-    shop_id VARCHAR(255) REFERENCES shops(id) ON DELETE CASCADE,
+    business_id VARCHAR(255) REFERENCES public.businesses(id) ON DELETE CASCADE,
+    shop_id VARCHAR(255) REFERENCES public.shops(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     sku VARCHAR(100) NOT NULL,
     category VARCHAR(100)
 );
 
-CREATE TABLE IF NOT EXISTS product_variants (
+CREATE TABLE IF NOT EXISTS public.product_variants (
     id VARCHAR(255) PRIMARY KEY,
-    product_id VARCHAR(255) REFERENCES products(id) ON DELETE CASCADE,
+    product_id VARCHAR(255) REFERENCES public.products(id) ON DELETE CASCADE,
     barcode VARCHAR(100),
     name VARCHAR(100) DEFAULT 'Default',
     buying_price NUMERIC(15, 2) DEFAULT 0.00,
@@ -254,6 +259,119 @@ CREATE TABLE IF NOT EXISTS product_variants (
     min_stock_alert INT DEFAULT 5,
     expiry_date DATE
 );`
+    },
+    {
+      name: 'sales & items breakdown',
+      description: 'Decentralized transactional logs capturing specific checkout totals, cashier identifiers, and itemised checkout quantities.',
+      sql: `CREATE TABLE IF NOT EXISTS public.sale_items (
+    id VARCHAR(255) PRIMARY KEY,
+    sale_id VARCHAR(255) NOT NULL,
+    product_id VARCHAR(255) NOT NULL,
+    variant_id VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    quantity INT NOT NULL,
+    buying_price NUMERIC(15, 2) DEFAULT 0.00,
+    price NUMERIC(15, 2) NOT NULL
+);`
+    },
+    {
+      name: 'employees, attendance & desk requests',
+      description: 'Fulfills high-level HRMS modules, staff logins, automatic presenter checkins, and live lodge guest request triggers.',
+      sql: `CREATE TABLE IF NOT EXISTS public.employees (
+    id VARCHAR(255) PRIMARY KEY,
+    business_id VARCHAR(255) REFERENCES public.businesses(id) ON DELETE CASCADE,
+    shop_id VARCHAR(255) REFERENCES public.shops(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL, -- 'ADMIN', 'CASHIER', 'MANAGER'
+    salary NUMERIC(15, 2) DEFAULT 0.00,
+    status VARCHAR(50) DEFAULT 'ACTIVE'
+);
+
+CREATE TABLE IF NOT EXISTS public.employee_attendance (
+    id VARCHAR(255) PRIMARY KEY,
+    employee_id VARCHAR(255) REFERENCES public.employees(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    check_in VARCHAR(30) NOT NULL,
+    check_out VARCHAR(30),
+    status VARCHAR(50) DEFAULT 'PRESENT'
+);
+
+CREATE TABLE IF NOT EXISTS public.guest_requests (
+    id VARCHAR(255) PRIMARY KEY,
+    business_id VARCHAR(255) REFERENCES public.businesses(id) ON DELETE CASCADE,
+    shop_id VARCHAR(255) REFERENCES public.shops(id) ON DELETE CASCADE,
+    guest_name VARCHAR(255) NOT NULL,
+    room_number VARCHAR(50) NOT NULL,
+    request_type VARCHAR(100) NOT NULL,
+    status VARCHAR(50) DEFAULT 'PENDING'
+);`
+    },
+    {
+      name: 'customer debts & general ledgers',
+      description: 'Records outstanding client credit balances, payments, interest margins, and operational audit trail logs.',
+      sql: `CREATE TABLE IF NOT EXISTS public.customer_debts (
+    id VARCHAR(255) PRIMARY KEY,
+    business_id VARCHAR(255) REFERENCES public.businesses(id) ON DELETE CASCADE,
+    shop_id VARCHAR(255) REFERENCES public.shops(id) ON DELETE CASCADE,
+    customer_id VARCHAR(255) NOT NULL,
+    sale_id VARCHAR(255) NOT NULL,
+    total_amount NUMERIC(15, 2) NOT NULL,
+    remaining_amount NUMERIC(15, 2) NOT NULL,
+    due_date TIMESTAMP NOT NULL,
+    status VARCHAR(50) DEFAULT 'PENDING'
+);
+
+CREATE TABLE IF NOT EXISTS public.ledger_entries (
+    id VARCHAR(255) PRIMARY KEY,
+    business_id VARCHAR(255) REFERENCES public.businesses(id) ON DELETE CASCADE,
+    entity_id VARCHAR(255) NOT NULL,
+    entity_type VARCHAR(50) NOT NULL, -- 'CUSTOMER' | 'SUPPLIER'
+    type VARCHAR(50) NOT NULL,
+    amount NUMERIC(15, 2) NOT NULL,
+    balance_after NUMERIC(15, 2) NOT NULL,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.expenses (
+    id VARCHAR(255) PRIMARY KEY,
+    business_id VARCHAR(255) REFERENCES public.businesses(id) ON DELETE CASCADE,
+    shop_id VARCHAR(255),
+    category VARCHAR(100) NOT NULL,
+    amount NUMERIC(15, 2) NOT NULL DEFAULT 0.00,
+    description TEXT,
+    date DATE DEFAULT CURRENT_DATE,
+    payment_method VARCHAR(50) DEFAULT 'CASH',
+    recorded_by VARCHAR(255),
+    receipt_url TEXT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.customers (
+    id VARCHAR(255) PRIMARY KEY,
+    business_id VARCHAR(255) REFERENCES public.businesses(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    phone VARCHAR(50),
+    email VARCHAR(255),
+    address TEXT,
+    loyalty_points INT DEFAULT 0,
+    total_spent NUMERIC(15, 2) DEFAULT 0.00,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.suppliers (
+    id VARCHAR(255) PRIMARY KEY,
+    business_id VARCHAR(255) REFERENCES public.businesses(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    contact_person VARCHAR(255),
+    phone VARCHAR(50),
+    email VARCHAR(255),
+    address TEXT,
+    category VARCHAR(100),
+    total_supplied NUMERIC(15, 2) DEFAULT 0.00,
+    total_paid NUMERIC(15, 2) DEFAULT 0.00,
+    balance NUMERIC(15, 2) DEFAULT 0.00,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);`
     }
   ];
 
@@ -261,9 +379,28 @@ CREATE TABLE IF NOT EXISTS product_variants (
     {
       name: 'profit_and_loss_analytics',
       description: 'Computes total profit margins automatically by auditing raw sales turnover, inventory costs (COGs), and daily petty expenses.',
-      sql: `WITH revenue_summary AS (
+      sql: `-- Ensure columns and tables exist before computing analytics
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS items JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS total NUMERIC(15, 2) DEFAULT 0.00;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS tax_amount NUMERIC(15, 2) DEFAULT 0.00;
+
+CREATE TABLE IF NOT EXISTS public.expenses (
+    id VARCHAR(255) PRIMARY KEY,
+    business_id VARCHAR(255),
+    shop_id VARCHAR(255),
+    category VARCHAR(100),
+    amount NUMERIC(15, 2) DEFAULT 0.00,
+    description TEXT,
+    date DATE DEFAULT CURRENT_DATE,
+    payment_method VARCHAR(50) DEFAULT 'CASH',
+    recorded_by VARCHAR(255),
+    receipt_url TEXT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+WITH revenue_summary AS (
     SELECT 
-        COALESCE(SUM(total), SUM(total_amount), 0) AS gross_sales_revenue,
+        COALESCE(SUM(total), 0) AS gross_sales_revenue,
         COALESCE(SUM(tax_amount), 0) AS gathered_sales_tax
     FROM public.sales 
     WHERE timestamp::DATE = CURRENT_DATE
@@ -272,16 +409,60 @@ cost_summary AS (
     SELECT 
         COALESCE(SUM((item->>'buying_price')::NUMERIC * (item->>'quantity')::INT), 0) AS inventory_cogs
     FROM public.sales,
-    LATERAL jsonb_array_elements(items) AS item
+    LATERAL jsonb_array_elements(COALESCE(items, '[]'::jsonb)) AS item
     WHERE timestamp::DATE = CURRENT_DATE
+),
+expense_summary AS (
+    SELECT 
+        COALESCE(SUM(amount), 0) AS total_daily_petty_expenses
+    FROM public.expenses 
+    WHERE date = CURRENT_DATE
 )
 SELECT 
     rev.gross_sales_revenue,
     rev.gathered_sales_tax,
     costs.inventory_cogs,
-    (rev.gross_sales_revenue - costs.inventory_cogs) AS gross_profit
+    exp.total_daily_petty_expenses,
+    (rev.gross_sales_revenue - costs.inventory_cogs) AS gross_profit,
+    (rev.gross_sales_revenue - costs.inventory_cogs - exp.total_daily_petty_expenses) AS net_profit
 FROM revenue_summary rev
-CROSS JOIN cost_summary costs;`
+CROSS JOIN cost_summary costs
+CROSS JOIN expense_summary exp;`
+    },
+    {
+      name: 'manual_cash_drawer_kick_logs',
+      description: 'Security audit selection displaying all unauthorized cash drawer open events to master supervisors.',
+      sql: `SELECT 
+    message AS audit_message, 
+    triggered_by AS cashier_reference, 
+    machine_id AS terminal_host_fingerprint, 
+    timestamp AS logged_time
+FROM public.piracy_alerts
+WHERE alert_type = 'CASH_DRAWER_KICK'
+ORDER BY timestamp DESC;`
+    },
+    {
+      name: 'licensing_health_summaries',
+      description: 'Renders central diagnostic dashboard values on expected subscription incomes, registered users, and system locks.',
+      sql: `SELECT 
+    COUNT(*) FILTER(WHERE status = 'ACTIVE') AS active_systems,
+    SUM(license_fee) AS expected_subscriptions_mrr,
+    COALESCE(SUM(penalty_amount), 0) AS historical_collected_penalties,
+    (SELECT COUNT(*) FROM public.piracy_alerts WHERE resolved = false) AS pending_security_breaches
+FROM public.licenses;`
+    },
+    {
+      name: 'low_stock_automatic_triggers',
+      description: 'Instantly identifies inventory variants running below preset safety stock trigger limits.',
+      sql: `SELECT 
+    p.name AS product_label, 
+    v.Barcode AS variant_barcode_label, 
+    v.stock AS remaining_stock, 
+    v.min_stock_alert AS warning_limit
+FROM product_variants v
+JOIN products p ON v.product_id = p.id
+WHERE v.stock <= v.min_stock_alert
+ORDER BY v.stock ASC;`
     }
   ];
 
