@@ -850,35 +850,37 @@ export const Settings: React.FC<SettingsProps> = ({ user, businessId, shopId, on
         </div>
       </div>
 
-      <div className="mt-12 pt-12 border-t border-rose-100 dark:border-rose-900/20">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 bg-rose-50 dark:bg-rose-900/10 text-rose-600 rounded-xl">
-            <AlertTriangle className="w-5 h-5" />
-          </div>
-          <div>
-            <h3 className="text-lg font-bold text-rose-600">Danger Zone</h3>
-            <p className="text-xs text-muted font-medium">Irreversible actions for your business</p>
-          </div>
-        </div>
-
-        <div className="p-6 bg-rose-50/50 dark:bg-rose-900/5 border border-rose-100 dark:border-rose-900/20 rounded-3xl">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="space-y-1">
-              <h4 className="font-bold text-ink">Delete Business</h4>
-              <p className="text-sm text-muted max-w-md">
-                Permanently remove this business and all associated data (shops, products, sales, and customers). This action cannot be undone.
-              </p>
+      {user?.role === 'admin' && (
+        <div className="mt-12 pt-12 border-t border-rose-100 dark:border-rose-900/20">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-rose-50 dark:bg-rose-900/10 text-rose-600 rounded-xl">
+              <AlertTriangle className="w-5 h-5" />
             </div>
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              className="px-8 py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-2xl transition-all shadow-lg shadow-rose-500/20 active:scale-95 flex items-center justify-center gap-2"
-            >
-              <Trash2 className="w-5 h-5" />
-              Delete Business
-            </button>
+            <div>
+              <h3 className="text-lg font-bold text-rose-600">Danger Zone</h3>
+              <p className="text-xs text-muted font-medium">Irreversible actions for your business</p>
+            </div>
+          </div>
+
+          <div className="p-6 bg-rose-50/50 dark:bg-rose-900/5 border border-rose-100 dark:border-rose-900/20 rounded-3xl">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="space-y-1">
+                <h4 className="font-bold text-ink">Delete Business</h4>
+                <p className="text-sm text-muted max-w-md">
+                  Permanently remove this business and all associated data (shops, products, sales, and customers). This action cannot be undone.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="px-8 py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-2xl transition-all shadow-lg shadow-rose-500/20 active:scale-95 flex items-center justify-center gap-2"
+              >
+                <Trash2 className="w-5 h-5" />
+                Delete Business
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <DeleteConfirmationModal
         isOpen={showDeleteConfirm}

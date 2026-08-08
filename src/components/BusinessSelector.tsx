@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
-import { BusinessProfile, BusinessType } from '../types';
+import { BusinessProfile, BusinessType, UserProfile } from '../types';
 import { Plus, Building2, Store, ChevronRight, Briefcase, Trash2, X, AlertTriangle, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { compressImage } from '../lib/imageUtils';
@@ -12,9 +12,10 @@ import { SafeImage } from './SafeImage';
 interface BusinessSelectorProps {
   onSelect: (business: BusinessProfile) => void;
   onLogout: () => void;
+  user?: UserProfile | null;
 }
 
-export const BusinessSelector: React.FC<BusinessSelectorProps> = ({ onSelect, onLogout }) => {
+export const BusinessSelector: React.FC<BusinessSelectorProps> = ({ onSelect, onLogout, user }) => {
   const [businesses, setBusinesses] = useState<BusinessProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -182,16 +183,18 @@ export const BusinessSelector: React.FC<BusinessSelectorProps> = ({ onSelect, on
                 </div>
               </button>
               
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setBusinessToDelete(business);
-                }}
-                className="absolute top-4 right-4 p-3 bg-rose-50 text-rose-600 rounded-2xl opacity-0 group-hover:opacity-100 transition-all hover:bg-rose-600 hover:text-white shadow-sm"
-                title="Delete Business"
-              >
-                <Trash2 className="w-5 h-5" />
-              </button>
+              {user?.role !== 'staff' && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setBusinessToDelete(business);
+                  }}
+                  className="absolute top-4 right-4 p-3 bg-rose-50 text-rose-600 rounded-2xl opacity-0 group-hover:opacity-100 transition-all hover:bg-rose-600 hover:text-white shadow-sm"
+                  title="Delete Business"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              )}
             </motion.div>
           ))}
 

@@ -577,7 +577,7 @@ export default function App() {
     }
 
     if (!activeBusinessId || !activeBusiness) {
-      return <BusinessSelector onSelect={handleBusinessSelect} onLogout={handleLogout} />;
+      return <BusinessSelector user={user} onSelect={handleBusinessSelect} onLogout={handleLogout} />;
     }
 
     if (!activeShopId) {
