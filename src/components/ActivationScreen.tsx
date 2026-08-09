@@ -277,24 +277,34 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
 
       await supabase.from('licenses').insert(payload);
 
-      // Notify developer logs
+      // Notify developer logs & send real-time alert + email notification
       try {
         await supabase.from('piracy_alerts').insert({
           id: crypto.randomUUID(),
           license_id: licenseId,
-          message: `📡 PENDING APPROVAL: Client submitted manual reference "${txClean}" for KES ${(selectedPlanDetails?.price || 0).toLocaleString()}. Phone: ${cleanPhone}.`,
+          message: `🚨 REAL-TIME PAYMENT APPROVAL ALERT: Client "${clientShopName.trim()}" (${cleanPhone}) submitted code "${txClean}" for plan "${selectedPlanDetails?.name}". Target: migichidave09@gmail.com.`,
           timestamp: new Date().toISOString(),
           metadata: {
             is_purchase_pending: true,
             ref_code: txClean,
-            amount: selectedPlanDetails?.price,
             plan_name: selectedPlanDetails?.name,
-            phone: cleanPhone
+            phone: cleanPhone,
+            client_name: clientShopName.trim(),
+            target_email: 'migichidave09@gmail.com'
           }
+        });
+
+        await supabase.from('email_notifications').insert({
+          id: crypto.randomUUID(),
+          recipient: 'migichidave09@gmail.com',
+          subject: `🚨 MANUAL PAYMENT APPROVAL: ${clientShopName.trim()} (${txClean})`,
+          body: `Client: ${clientShopName.trim()}\nPhone: ${cleanPhone}\nPlan: ${selectedPlanDetails?.name}\nM-Pesa Ref: ${txClean}\nTimestamp: ${new Date().toLocaleString()}\n\nPlease verify in Master Admin panel and click Confirm & Allow.`,
+          status: 'PENDING',
+          created_at: new Date().toISOString()
         });
       } catch (err) {}
 
-      setVerifyingStatus('Payment submitted! Awaiting David to confirm on his phone/email and Allow software launch. Do not close this browser.');
+      setVerifyingStatus('Payment submitted! Real-time notification dispatched to Master Admin & email migichidave09@gmail.com. Awaiting David to confirm on his phone/email and Allow software launch. Do not close browser.');
 
       // Watch for license state changes to 'ACTIVE'
       const channel = supabase
@@ -539,11 +549,8 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
                     <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
                       <div>
                         <span className="px-2 py-0.5 bg-indigo-500/15 text-indigo-400 text-[8px] font-black uppercase tracking-widest rounded">SaaS Subscription</span>
-                        <h3 className="text-md font-black text-white mt-2 mb-1">Cloud Sync Engine</h3>
+                        <h3 className="text-md font-black text-white mt-2 mb-3">Cloud Sync Engine</h3>
                         <p className="text-[10px] text-slate-500 mb-3">Best for Boutique shops, beauty salons, general retail, pharmacies, cosmetics hubs.</p>
-                        <div className="text-lg font-black text-indigo-400 mb-4 font-sans">
-                          KES 3,000 <span className="text-[10px] text-slate-500 font-normal">/ month</span>
-                        </div>
                         <ul className="text-[10px] text-slate-400 space-y-2">
                           <li className="flex items-start gap-1.5">
                             <span className="text-indigo-400 font-black">✓</span>
@@ -566,7 +573,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
                         }}
                         className="w-full mt-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
                       >
-                        Select & Pay KES 3,000
+                        Select Plan
                       </button>
                     </div>
 
@@ -574,11 +581,8 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
                     <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between border-t-4 border-t-amber-500">
                       <div>
                         <span className="px-2 py-0.5 bg-amber-500/15 text-amber-400 text-[8px] font-black uppercase tracking-widest rounded">One-off license</span>
-                        <h3 className="text-md font-black text-white mt-2 mb-1">Premium Local-First</h3>
+                        <h3 className="text-md font-black text-white mt-2 mb-3">Premium Local-First</h3>
                         <p className="text-[10px] text-slate-500 mb-3">Best for Hardware yards, standalone wholesale depots, countryside hub stores.</p>
-                        <div className="text-lg font-black text-amber-500 mb-4 font-sans">
-                          KES 45,000 <span className="text-[10px] text-slate-500 font-normal">One-Off</span>
-                        </div>
                         <ul className="text-[10px] text-slate-400 space-y-2">
                           <li className="flex items-start gap-1.5">
                             <span className="text-amber-500 font-black">✓</span>
@@ -601,7 +605,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
                         }}
                         className="w-full mt-4 py-2.5 bg-amber-500 hover:bg-amber-450 text-slate-950 rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
                       >
-                        Select & Pay KES 45,000
+                        Select Plan
                       </button>
                     </div>
 
@@ -609,11 +613,8 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
                     <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between border-t-4 border-t-indigo-500">
                       <div>
                         <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 text-[8px] font-black uppercase tracking-widest rounded">Hospitality Bundle</span>
-                        <h3 className="text-md font-black text-white mt-2 mb-1">Hotel & Lodge Suite</h3>
+                        <h3 className="text-md font-black text-white mt-2 mb-3">Hotel & Lodge Suite</h3>
                         <p className="text-[10px] text-slate-500 mb-3">Best for motels, Airbnbs, boarding houses, resorts, bar lounges.</p>
-                        <div className="text-lg font-black text-indigo-400 mb-4 font-sans">
-                          KES 6,500 <span className="text-[10px] text-slate-400">/ month</span>
-                        </div>
                         <ul className="text-[10px] text-slate-400 space-y-2">
                           <li className="flex items-start gap-1.5">
                             <span className="text-indigo-400 font-black">✓</span>
@@ -636,7 +637,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
                         }}
                         className="w-full mt-4 py-2.5 bg-indigo-500 hover:bg-indigo-400 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
                       >
-                        Select & Pay KES 6,500
+                        Select Plan
                       </button>
                     </div>
 
@@ -664,8 +665,8 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
                         <span className="px-2.5 py-0.5 bg-indigo-500/10 text-indigo-400 text-[9px] font-black uppercase tracking-wider rounded">Plan Registration</span>
                         <h4 className="text-md font-black uppercase tracking-tight text-white">{selectedPlanDetails.name}</h4>
                         <div className="flex justify-between items-center text-xs">
-                          <span className="text-slate-400">Safaricom Direct Target:</span>
-                          <span className="font-mono bg-indigo-500/10 text-indigo-400 px-2.5 py-0.5 rounded font-black text-sm">KES {selectedPlanDetails.price.toLocaleString()}</span>
+                          <span className="text-slate-400">Selected Plan:</span>
+                          <span className="font-mono bg-indigo-500/10 text-indigo-400 px-2.5 py-0.5 rounded font-black text-xs">{selectedPlanDetails.name}</span>
                         </div>
                       </div>
 
@@ -715,21 +716,8 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
 
                       <div className="space-y-3">
                         <button 
-                          onClick={startMpesaVerification}
-                          className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg shadow-emerald-500/15 flex items-center justify-center gap-2 transition-all active:scale-95"
-                        >
-                          <Smartphone className="w-4 h-4 animate-bounce" /> Request STK PIN Prompt (STK Push)
-                        </button>
-
-                        <div className="flex items-center my-3">
-                          <div className="flex-grow border-t border-slate-800"></div>
-                          <span className="px-3 text-[9px] uppercase font-black text-slate-500 tracking-widest">or</span>
-                          <div className="flex-grow border-t border-slate-800"></div>
-                        </div>
-
-                        <button 
                           onClick={handleManualSubmitForApproval}
-                          className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold uppercase text-[10px] tracking-wide shadow-md flex items-center justify-center gap-2 transition-all active:scale-95"
+                          className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-black uppercase text-xs tracking-wider shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 transition-all active:scale-95"
                         >
                           <ShieldCheck className="w-4 h-4" /> Paid manually? Submit Code for Approval
                         </button>

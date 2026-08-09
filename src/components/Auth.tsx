@@ -53,11 +53,14 @@ export const Auth: React.FC<AuthProps> = ({ onUserLoaded }) => {
     setLoading(true);
 
     try {
+      const isReservedUser = username.trim().toUpperCase() === 'HRM' || username.trim().toUpperCase() === 'FINANCE';
+      const effectiveRole: Role = isReservedUser ? 'admin' : loginRole;
+
       if (isRegistering) {
         const newUser = await localAuth.register({
           username,
-          name: name || 'User',
-          role: loginRole,
+          name: name || username.toUpperCase(),
+          role: effectiveRole,
           email: `${username.toLowerCase()}@dmitechnologies.internal`
         });
         setUser(newUser);
@@ -66,7 +69,7 @@ export const Auth: React.FC<AuthProps> = ({ onUserLoaded }) => {
       } else {
         const loggedInUser = await localAuth.login(username, password);
         if (loggedInUser) {
-          if (loggedInUser.role !== loginRole) {
+          if (!isReservedUser && loggedInUser.role !== loginRole) {
             throw new Error(`This account is not registered as ${loginRole}`);
           }
           setUser(loggedInUser);

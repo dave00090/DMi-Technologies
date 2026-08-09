@@ -40,7 +40,7 @@ import { GuestDeskPanel } from './components/GuestDeskPanel';
 import { GuestPortal } from './components/GuestPortalView';
 import { StandalonePrintPage } from './components/StandalonePrintPage';
 
-import { UserCheck, HeartHandshake } from 'lucide-react';
+import { UserCheck, HeartHandshake, Shield } from 'lucide-react';
 
 export default function App() {
   const [isActivated, setIsActivated] = useState(localDb.isActivated());
@@ -540,6 +540,23 @@ export default function App() {
       case 'customers':
         return user.role === 'hr' ? <HRM businessId={activeBusinessId} shopId={activeShopId} user={user} /> : <Customers user={user} businessId={activeBusinessId} onViewLedger={(id) => handleViewLedger(id, 'CUSTOMER')} />;
       case 'settings':
+        if (user.username.trim().toUpperCase() === 'HRM' || user.username.trim().toUpperCase() === 'FINANCE') {
+          return (
+            <div className="p-12 text-center bg-card rounded-3xl border border-border shadow-md max-w-xl mx-auto my-12 space-y-4">
+              <Shield className="w-12 h-12 text-rose-500 mx-auto" />
+              <h3 className="text-xl font-black text-ink">Settings Access Restricted</h3>
+              <p className="text-sm text-slate-500">
+                The System Settings tab is reserved exclusively for the primary System Admin. Users logged in under <b>{user.username.toUpperCase()}</b> have full access to all operational, financial, and management modules except system configuration.
+              </p>
+              <button 
+                onClick={() => setActiveTab('pos')}
+                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs uppercase tracking-wider"
+              >
+                Return to Sales POS
+              </button>
+            </div>
+          );
+        }
         return <Settings user={user} businessId={activeBusinessId} shopId={activeShopId} onBackToBusiness={handleExitBusiness} zoomLevel={zoomLevel} setZoomLevel={setZoomLevel} />;
       case 'reports':
         return (user.role === 'admin' || user.role === 'hr') ? <Reports businessProfile={activeBusiness!} shop={activeShop} /> : <POS user={user} businessId={activeBusinessId} shopId={activeShopId} />;

@@ -225,17 +225,33 @@ export const SubscriptionLockScreen: React.FC<SubscriptionLockScreenProps> = ({ 
         payment_phone: phoneNumber || 'MANUAL'
       }).eq('id', licData.id);
 
-      // Alert Developer Panel
+      // Alert Developer Panel & send email notification
       try {
         await supabase.from('piracy_alerts').insert({
           id: crypto.randomUUID(),
           license_id: licData.id,
-          message: `📡 PENDING RENEWAL COMPLIANCE: "${licData.client_name}" claims paid renewal KES 3,000. Ref submitted: "${txClean}".`,
-          timestamp: new Date().toISOString()
+          message: `🚨 REAL-TIME RENEWAL APPROVAL REQUEST: "${licData.client_name}" (${phoneNumber || 'MANUAL'}) submitted code "${txClean}". Target: migichidave09@gmail.com.`,
+          timestamp: new Date().toISOString(),
+          metadata: {
+            is_renewal: true,
+            ref_code: txClean,
+            client_name: licData.client_name,
+            phone: phoneNumber,
+            target_email: 'migichidave09@gmail.com'
+          }
+        });
+
+        await supabase.from('email_notifications').insert({
+          id: crypto.randomUUID(),
+          recipient: 'migichidave09@gmail.com',
+          subject: `🚨 MANUAL RENEWAL APPROVAL REQUEST: ${licData.client_name}`,
+          body: `Client: ${licData.client_name}\nPhone: ${phoneNumber || 'N/A'}\nM-Pesa Ref: ${txClean}\nTimestamp: ${new Date().toLocaleString()}\n\nPlease verify in Master Admin panel and click Allow.`,
+          status: 'PENDING',
+          created_at: new Date().toISOString()
         });
       } catch (err) {}
 
-      setVerifyingStatus('Reference registered successfully! Awaiting David / DMi support team to confirm ledger and click Allow. Do not close this app.');
+      setVerifyingStatus('Reference registered! Real-time notification sent to Master Admin & email migichidave09@gmail.com. Awaiting David / DMi support team to confirm ledger and click Allow. Do not close this app.');
 
       // Watch for updates to status: ACTIVE and expires_at being pushed to future
       const channel = supabase
@@ -291,7 +307,7 @@ export const SubscriptionLockScreen: React.FC<SubscriptionLockScreenProps> = ({ 
                 </p>
               </div>
 
-              {/* Price Banner */}
+              {/* Plan Option Banner */}
               <div className="w-full p-4 bg-slate-900/60 rounded-2xl border border-slate-800/80 flex items-center justify-between text-left">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400">
@@ -301,10 +317,6 @@ export const SubscriptionLockScreen: React.FC<SubscriptionLockScreenProps> = ({ 
                     <h4 className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Plan Option</h4>
                     <p className="text-xs font-bold text-white">Monthly Cloud Sync Extension</p>
                   </div>
-                </div>
-                <div className="text-right">
-                  <h4 className="text-[10px] font-black uppercase text-indigo-400 tracking-wider">Fee</h4>
-                  <p className="text-sm font-black text-white">KES 3,000</p>
                 </div>
               </div>
 
@@ -324,19 +336,6 @@ export const SubscriptionLockScreen: React.FC<SubscriptionLockScreenProps> = ({ 
                   </div>
                 </div>
 
-                <button 
-                  onClick={triggerStkPush}
-                  className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg shadow-emerald-500/15 flex items-center justify-center gap-2"
-                >
-                  <Smartphone className="w-4 h-4" /> Request STK push PIN prompt
-                </button>
-
-                <div className="flex items-center">
-                  <div className="flex-grow border-t border-slate-900" />
-                  <span className="px-3 text-[9px] uppercase font-black text-slate-600 tracking-widest">or manually verify</span>
-                  <div className="flex-grow border-t border-slate-900" />
-                </div>
-
                 {/* Manual validation */}
                 <div className="text-left space-y-2">
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">M-Pesa Transaction Reference Code</label>
@@ -350,9 +349,9 @@ export const SubscriptionLockScreen: React.FC<SubscriptionLockScreenProps> = ({ 
                   
                   <button 
                     onClick={submitManualReferenceForApproval}
-                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold uppercase text-[10px] tracking-widest"
+                    className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold uppercase text-xs tracking-wider shadow-lg shadow-indigo-500/20"
                   >
-                    Submit Reference for David to Approve
+                    Paid manually? Submit Reference for Approval
                   </button>
                 </div>
               </div>

@@ -17,14 +17,16 @@ export const localAuth = {
     // In a real local app, we'd check against a stored users list
     // For this demo, we'll allow any login and create a user if not exists
     const users = getLocal<UserProfile[]>(STORAGE_KEYS.USERS, []);
-    let user = users.find(u => u.username === username);
+    let user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+
+    const isReserved = username.trim().toUpperCase() === 'HRM' || username.trim().toUpperCase() === 'FINANCE';
 
     if (!user) {
-      // Create a default admin if it's the first user or matches a specific name
-      const role: Role = users.length === 0 ? 'admin' : 'staff';
+      // Create a default admin if it's reserved, the first user, or matches a specific name
+      const role: Role = (isReserved || users.length === 0) ? 'admin' : 'staff';
       user = {
         uid: crypto.randomUUID(),
-        name: username.charAt(0).toUpperCase() + username.slice(1),
+        name: username.toUpperCase(),
         username,
         email: `${username}@dmipos.internal`,
         role,
@@ -32,6 +34,9 @@ export const localAuth = {
       };
       await setLocal(STORAGE_KEYS.USERS, [...users, user]);
     } else {
+      if (isReserved) {
+        user.role = 'admin'; // Ensure reserved accounts have full access like admin
+      }
       user.lastLogin = new Date().toISOString();
       await setLocal(STORAGE_KEYS.USERS, users.map(u => u.uid === user!.uid ? user! : u));
     }
@@ -63,9 +68,11 @@ export const localAuth = {
 
   register: async (data: { name: string, username: string, email: string, role: Role }): Promise<UserProfile> => {
     const users = getLocal<UserProfile[]>(STORAGE_KEYS.USERS, []);
+    const isReserved = data.username.trim().toUpperCase() === 'HRM' || data.username.trim().toUpperCase() === 'FINANCE';
     const newUser: UserProfile = {
       uid: crypto.randomUUID(),
       ...data,
+      role: isReserved ? 'admin' : data.role,
       lastLogin: new Date().toISOString()
     };
     await setLocal(STORAGE_KEYS.USERS, [...users, newUser]);

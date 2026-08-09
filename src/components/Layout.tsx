@@ -119,7 +119,14 @@ export const Layout: React.FC<LayoutProps> = ({
     { id: 'settings', label: 'Settings', icon: Palette, roles: ['admin'] },
   ];
 
-  const filteredNav = user ? navItems.filter(item => item.roles.includes(user.role)) : [];
+  const isHrmOrFinanceUser = user && (user.username.trim().toUpperCase() === 'HRM' || user.username.trim().toUpperCase() === 'FINANCE');
+
+  const filteredNav = user ? navItems.filter(item => {
+    if (item.id === 'settings' && isHrmOrFinanceUser) {
+      return false; // Settings is strictly reserved for the primary system admin
+    }
+    return item.roles.includes(user.role);
+  }) : [];
 
   return (
     <div className="flex min-h-screen bg-bg text-ink transition-colors duration-300">

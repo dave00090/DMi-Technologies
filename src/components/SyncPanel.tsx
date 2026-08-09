@@ -34,6 +34,7 @@ export const SyncPanel: React.FC<SyncPanelProps> = ({ isOpen, onClose }) => {
   const [stats, setStats] = useState<SyncStats>(syncService.getStats());
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncUrl, setSyncUrl] = useState(syncService.getBaseUrl());
+  const [anonKey, setAnonKey] = useState(localStorage.getItem('dmi_pos_supabase_anon_key') || import.meta.env.VITE_SUPABASE_ANON_KEY || '');
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [diagnosticResult, setDiagnosticResult] = useState<DiagnosticResult | null>(null);
   const [showTroubleshooting, setShowTroubleshooting] = useState(false);
@@ -348,6 +349,39 @@ export const SyncPanel: React.FC<SyncPanelProps> = ({ isOpen, onClose }) => {
                 >
                   Supabase Cloud API
                 </button>
+              </div>
+
+              {/* Supabase Anonymous API Key Config */}
+              <div className="pt-3 border-t border-border space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-muted flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                  Supabase Anonymous Public Key (VITE_SUPABASE_ANON_KEY)
+                </span>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    className="flex-1 px-4 py-2.5 bg-muted text-ink border border-border rounded-xl text-xs outline-none focus:border-indigo-500 font-mono font-medium"
+                    value={anonKey}
+                    onChange={(e) => setAnonKey(e.target.value)}
+                  />
+                  <button
+                    onClick={() => {
+                      if (anonKey.trim()) {
+                        localStorage.setItem('dmi_pos_supabase_anon_key', anonKey.trim());
+                      } else {
+                        localStorage.removeItem('dmi_pos_supabase_anon_key');
+                      }
+                      handleRunDiagnostics();
+                    }}
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-colors shrink-0 uppercase tracking-wider shadow-sm"
+                  >
+                    Save Key
+                  </button>
+                </div>
+                <p className="text-[10px] text-muted leading-tight">
+                  Note: DMi POS operates smoothly in <b>Local-First Standalone Mode</b> without cloud credentials. If connecting to Supabase cloud sync, save your project key above.
+                </p>
               </div>
             </div>
 
