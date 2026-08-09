@@ -329,32 +329,40 @@ export default function App() {
 
   useEffect(() => {
     if (activeBusinessId && activeShopId) {
-      const updateAlerts = () => {
+      const updateAlerts = async () => {
         const alerts = localDb.getAlerts(activeBusinessId, activeShopId);
         
-        // Check for overdue debts (more than 24 hours)
+        // Check for unpaid debts older than 24 hours or past due date
         const debts = localDb.getAllDebts(activeBusinessId, activeShopId);
+        const customers = await localDb.getCustomers(activeBusinessId);
+        const customerMap = new Map(customers.map(c => [c.id, c.name]));
         const now = new Date();
-        const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        const twentyFourHoursMs = 24 * 60 * 60 * 1000;
         
         debts.forEach(debt => {
-          if (debt.status !== 'PAID' && debt.status !== 'OVERDUE') {
-            const dueDate = new Date(debt.dueDate);
-            if (dueDate < twentyFourHoursAgo) {
-              // Mark as overdue in DB
-              localDb.updateDebt(debt.id, { status: 'OVERDUE' });
+          if (debt.status !== 'PAID') {
+            const createdMs = new Date(debt.createdAt || debt.dueDate).getTime();
+            const ageMs = now.getTime() - createdMs;
+            const is24hUnpaid = ageMs >= twentyFourHoursMs;
+            const isPastDueDate = debt.dueDate ? new Date(debt.dueDate) <= now : false;
+
+            if (is24hUnpaid || isPastDueDate) {
+              if (debt.status !== 'OVERDUE') {
+                localDb.updateDebt(debt.id, { status: 'OVERDUE' });
+              }
               
               // Create alert if not already exists
               const existingAlert = alerts.find(a => a.type === 'DEBT_OVERDUE' && a.details?.debtId === debt.id);
               if (!existingAlert) {
+                const custName = customerMap.get(debt.customerId) || 'Customer';
                 localDb.addAlert({
                   businessId: activeBusinessId,
                   shopId: activeShopId,
                   type: 'DEBT_OVERDUE',
-                  message: `Debt for sale ${debt.saleId.slice(0, 8)} is overdue by more than 24 hours.`,
+                  message: `Unpaid Debt Alert: ${custName} owes KSh ${debt.remainingAmount.toLocaleString()} (Unpaid for 24+ hours).`,
                   timestamp: now.toISOString(),
                   status: 'UNREAD',
-                  details: { debtId: debt.id, customerId: debt.customerId }
+                  details: { debtId: debt.id, customerId: debt.customerId, amount: debt.remainingAmount }
                 });
               }
             }
@@ -365,7 +373,7 @@ export default function App() {
       };
       
       updateAlerts();
-      const interval = setInterval(updateAlerts, 30000); // Poll every 30 seconds
+      const interval = setInterval(updateAlerts, 15000); // Check every 15 seconds
       return () => clearInterval(interval);
     }
   }, [user, activeBusinessId, activeShopId]);

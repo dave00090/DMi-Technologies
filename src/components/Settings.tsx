@@ -21,9 +21,23 @@ import {
   Copy,
   Trash2,
   AlertTriangle,
-  History as HistoryIcon
+  History as HistoryIcon,
+  Folder,
+  Download,
+  Upload,
+  HardDrive,
+  ShieldCheck,
+  Activity,
+  FileCheck,
+  AlertCircle,
+  Info,
+  XCircle,
+  RefreshCw,
+  Database
 } from 'lucide-react';
 import { localDb, removeLocal } from '../services/localDb';
+import { dmiDataEngine } from '../services/dmiDataEngine';
+import { integrityEngine, IntegrityReport } from '../services/integrityEngine';
 import { motion, AnimatePresence } from 'motion/react';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { compressImage } from '../lib/imageUtils';
@@ -63,7 +77,24 @@ export const Settings: React.FC<SettingsProps> = ({ user, businessId, shopId, on
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile>(localDb.getBusinessById(businessId)!);
   const [testingMpesa, setTestingMpesa] = useState(false);
   const [mpesaTestResult, setMpesaTestResult] = useState<{ status: 'SUCCESS' | 'FAILED', message: string } | null>(null);
+  const [importingDmiData, setImportingDmiData] = useState(false);
+  const [runningAudit, setRunningAudit] = useState(false);
+  const [auditReport, setAuditReport] = useState<IntegrityReport | null>(null);
+  const [showAuditModal, setShowAuditModal] = useState(false);
   const activeShop = localDb.getShopById(shopId);
+
+  const handleRunAudit = async () => {
+    setRunningAudit(true);
+    try {
+      const report = await integrityEngine.runAudit();
+      setAuditReport(report);
+      setShowAuditModal(true);
+    } catch (e: any) {
+      alert(`Audit failed: ${e.message}`);
+    } finally {
+      setRunningAudit(false);
+    }
+  };
 
   const showSuccess = (msg: string) => {
     setSuccessMessage(msg);
@@ -795,6 +826,305 @@ export const Settings: React.FC<SettingsProps> = ({ user, businessId, shopId, on
           </button>
         </div>
       </div>
+
+      {/* DMi DATA FOLDER STORAGE & LICENSE IMPORT ENGINE */}
+      <div className="bg-card border border-indigo-500/30 dark:border-indigo-500/20 rounded-3xl p-8 shadow-sm relative overflow-hidden">
+        <div className="absolute -right-8 -bottom-8 w-48 h-48 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none" />
+        
+        <div className="flex items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-indigo-50 dark:bg-indigo-950/40 rounded-2xl text-indigo-600 dark:text-indigo-400 border border-indigo-200/50">
+              <Folder className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-bold text-ink">DMi Data Storage & Import</h2>
+                <span className="px-2.5 py-0.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-wider rounded-full border border-indigo-500/20">
+                  EXE Desktop & Offline Ready
+                </span>
+              </div>
+              <p className="text-muted text-sm mt-0.5">
+                Manage the <code className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-mono text-xs text-indigo-600 font-bold">DMi data</code> directory database files for this license key
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-slate-50 dark:bg-slate-900/60 border border-border rounded-2xl p-4 mb-6 space-y-2">
+          <div className="flex items-start gap-3">
+            <HardDrive className="w-5 h-5 text-indigo-500 flex-shrink-0 mt-0.5" />
+            <div className="text-xs text-muted leading-relaxed">
+              <p className="font-bold text-ink mb-1">💡 Desktop EXE & Offline Data Preservation:</p>
+              When compiled into a standalone Windows/Desktop <span className="font-bold text-indigo-600">.exe</span>, the system automatically creates and reads from the <span className="font-mono font-bold text-ink">DMi data</span> folder in the application root directory. You can export complete snapshots to this folder or import external <span className="font-mono font-bold text-indigo-600">.dmidata</span> files to instantly restore all business records, sales ledgers, products, variants, and IndexedDB images without faults.
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* EXPORT DMI DATA ARCHIVE (DESKTOP BACKUP) */}
+          <div className="p-6 bg-bg border border-border rounded-2xl space-y-4 flex flex-col justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold">
+                <Download className="w-5 h-5" />
+                <h4>Export Desktop Backup</h4>
+              </div>
+              <p className="text-xs text-muted leading-relaxed">
+                Generates a complete, verified snapshot archive of all local system records and images formatted for direct saving on your <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">Desktop</span> for easy offline storage and transfer.
+              </p>
+            </div>
+            <button
+              onClick={async () => {
+                const result = await dmiDataEngine.exportToDesktop();
+                if (result.success) {
+                  showSuccess(result.message);
+                } else if (!result.cancelled) {
+                  alert(`Export Error: ${result.message}`);
+                }
+              }}
+              className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+            >
+              <Download className="w-4 h-4" />
+              <span>Export Backup to Desktop</span>
+            </button>
+          </div>
+
+          {/* IMPORT DMI DATA FILE (DESKTOP BACKUP) */}
+          <div className="p-6 bg-bg border border-border rounded-2xl space-y-4 flex flex-col justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold">
+                <Upload className="w-5 h-5" />
+                <h4>Import Desktop Backup</h4>
+              </div>
+              <p className="text-xs text-muted leading-relaxed">
+                Select a <span className="font-mono font-bold text-emerald-600">.dmidata</span> or <span className="font-mono font-bold text-emerald-600">.json</span> backup file from your <span className="font-mono font-bold">Desktop</span> to reload and restore local system records seamlessly.
+              </p>
+            </div>
+
+            <label className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98">
+              <Upload className="w-4 h-4" />
+              <span>{importingDmiData ? 'Importing & Validating...' : 'Select Backup from Desktop'}</span>
+              <input
+                type="file"
+                accept=".dmidata,.json"
+                className="hidden"
+                disabled={importingDmiData}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setImportingDmiData(true);
+                  try {
+                    const reader = new FileReader();
+                    reader.onload = async (evt) => {
+                      const content = evt.target?.result as string;
+                      const res = await dmiDataEngine.importDmiDataBundle(content);
+                      setImportingDmiData(false);
+                      if (res.success) {
+                        showSuccess(res.message);
+                      } else {
+                        alert(`Import Error: ${res.message}`);
+                      }
+                    };
+                    reader.readAsText(file);
+                  } catch (err: any) {
+                    setImportingDmiData(false);
+                    alert(`Failed to read file: ${err.message}`);
+                  }
+                  e.target.value = '';
+                }}
+              />
+            </label>
+          </div>
+
+          {/* VERIFY INTEGRITY UTILITY */}
+          <div className="p-6 bg-bg border border-border rounded-2xl space-y-4 flex flex-col justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sky-600 dark:text-sky-400 font-bold">
+                <ShieldCheck className="w-5 h-5" />
+                <h4>Verify Integrity</h4>
+              </div>
+              <p className="text-xs text-muted leading-relaxed">
+                Runs an instant audit of local storage and IndexedDB. Counts records across tables and checks for broken links between sales and inventory.
+              </p>
+            </div>
+
+            <button
+              onClick={handleRunAudit}
+              disabled={runningAudit}
+              className="w-full py-3 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98 disabled:opacity-50"
+            >
+              {runningAudit ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Auditing Database...</span>
+                </>
+              ) : (
+                <>
+                  <Activity className="w-4 h-4" />
+                  <span>Verify Local Data Health</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* VERIFY INTEGRITY DIAGNOSTIC MODAL */}
+      <AnimatePresence>
+        {showAuditModal && auditReport && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-card border border-border rounded-3xl p-6 sm:p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl relative"
+            >
+              <div className="flex items-center justify-between pb-4 border-b border-border">
+                <div className="flex items-center gap-3">
+                  <div className={`p-3 rounded-2xl ${
+                    auditReport.status === 'HEALTHY' 
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200' 
+                      : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200'
+                  }`}>
+                    <ShieldCheck className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-ink">Database Integrity Audit</h3>
+                    <p className="text-xs text-muted">Audited at {auditReport.timestamp}</p>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
+                    auditReport.status === 'HEALTHY' 
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' 
+                      : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                  }`}>
+                    Health Score: {auditReport.healthScore}%
+                  </span>
+                </div>
+              </div>
+
+              {/* OVERVIEW STATS */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 my-6">
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-border">
+                  <span className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">Total Records</span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-black text-ink">{auditReport.totalRecords}</span>
+                    <span className="text-xs text-muted">entries</span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-border">
+                  <span className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">IndexedDB Images</span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400">{auditReport.idbStats.totalImages}</span>
+                    <span className="text-xs text-muted">files</span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-border col-span-2 sm:col-span-1">
+                  <span className="text-[10px] font-bold text-muted uppercase tracking-wider block mb-1">Status</span>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    {auditReport.status === 'HEALTHY' ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">100% Healthy</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="w-4 h-4 text-amber-500" />
+                        <span className="text-sm font-bold text-amber-600 dark:text-amber-400">
+                          {auditReport.issues.length} Issues Found
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* TABLE RECORD BREAKDOWN */}
+              <div className="mb-6">
+                <h4 className="text-xs font-bold text-muted uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5 text-indigo-500" />
+                  Table Record Counts
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  {Object.entries(auditReport.tableCounts).map(([tableName, count]) => (
+                    <div key={tableName} className="p-2 bg-muted/20 rounded-xl border border-border/50 flex justify-between items-center">
+                      <span className="text-muted font-medium truncate">{tableName}</span>
+                      <span className="font-bold text-ink bg-card px-2 py-0.5 rounded-md border border-border">{count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* DIAGNOSTIC ISSUES LOG */}
+              <div className="mb-6">
+                <h4 className="text-xs font-bold text-muted uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-sky-500" />
+                  Diagnostic Link Checks & Findings
+                </h4>
+
+                {auditReport.issues.length === 0 ? (
+                  <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center gap-3 text-emerald-600 dark:text-emerald-400 text-xs font-medium">
+                    <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
+                    <span>Zero mismatches or broken links found! All sales line items match valid inventory products and IndexedDB image references are intact.</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {auditReport.issues.map((issue) => (
+                      <div
+                        key={issue.id}
+                        className={`p-3 rounded-2xl border text-xs space-y-1 ${
+                          issue.severity === 'ERROR'
+                            ? 'bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400'
+                            : issue.severity === 'WARNING'
+                            ? 'bg-amber-500/10 border-amber-500/20 text-amber-700 dark:text-amber-300'
+                            : 'bg-sky-500/10 border-sky-500/20 text-sky-600 dark:text-sky-400'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between font-bold">
+                          <span className="flex items-center gap-1.5">
+                            {issue.severity === 'ERROR' && <XCircle className="w-3.5 h-3.5" />}
+                            {issue.severity === 'WARNING' && <AlertCircle className="w-3.5 h-3.5" />}
+                            {issue.severity === 'INFO' && <Info className="w-3.5 h-3.5" />}
+                            {issue.title}
+                          </span>
+                          {issue.affectedItem && (
+                            <span className="px-1.5 py-0.5 bg-card rounded text-[10px] font-mono border border-border">
+                              {issue.affectedItem}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] opacity-90 leading-relaxed">{issue.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* MODAL FOOTER */}
+              <div className="flex items-center justify-between pt-4 border-t border-border">
+                <button
+                  onClick={handleRunAudit}
+                  disabled={runningAudit}
+                  className="px-4 py-2 bg-muted hover:bg-card text-ink font-bold text-xs rounded-xl border border-border flex items-center gap-2 cursor-pointer transition-all"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${runningAudit ? 'animate-spin' : ''}`} />
+                  <span>Re-run Audit</span>
+                </button>
+
+                <button
+                  onClick={() => setShowAuditModal(false)}
+                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer transition-all active:scale-98"
+                >
+                  Close Report
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <div className="bg-card border border-border rounded-3xl p-8 shadow-sm">
         <div className="flex items-center gap-4 mb-8">

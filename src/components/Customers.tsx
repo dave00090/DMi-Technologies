@@ -20,7 +20,8 @@ import {
   DollarSign,
   BookOpen,
   Download,
-  User
+  User,
+  Plus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
@@ -82,6 +83,10 @@ export const Customers: React.FC<CustomersProps> = ({ user, businessId, onViewLe
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [isProcessingDebt, setIsProcessingDebt] = useState(false);
 
+  const [showAddDebtForm, setShowAddDebtForm] = useState(false);
+  const [newDebtAmount, setNewDebtAmount] = useState('');
+  const [newDebtNote, setNewDebtNote] = useState('');
+
   const fetchHistoryAndDebts = async () => {
     if (!selectedCustomer) return;
     setLoadingHistory(true);
@@ -92,11 +97,64 @@ export const Customers: React.FC<CustomersProps> = ({ user, businessId, onViewLe
       ]);
       const history = sales.filter(s => s.customerId === selectedCustomer.id);
       setPurchaseHistory(history.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
-      setCustomerDebts(debts.filter(d => d.status === 'PENDING' || d.status === 'PARTIAL'));
+      setCustomerDebts(debts.filter(d => d.status === 'PENDING' || d.status === 'PARTIAL' || d.status === 'OVERDUE'));
     } catch (error) {
       console.error("Error fetching history:", error);
     } finally {
       setLoadingHistory(false);
+    }
+  };
+
+  const handleAddManualDebt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustomer || !newDebtAmount || Number(newDebtAmount) <= 0 || isProcessingDebt) return;
+    setIsProcessingDebt(true);
+    try {
+      const amt = Number(newDebtAmount);
+      const activeShopId = db.getActiveShopId() || 'default-shop';
+      
+      const newDebt = await db.addDebt({
+        businessId,
+        shopId: activeShopId,
+        customerId: selectedCustomer.id,
+        saleId: `MANUAL_${Date.now().toString(36).toUpperCase()}`,
+        amount: amt,
+        remainingAmount: amt,
+        dueDate: new Date().toISOString(), // Created now, overdue if unpaid after 24 hrs
+        status: 'PENDING',
+        createdAt: new Date().toISOString()
+      });
+
+      await db.addLedgerEntry({
+        businessId,
+        shopId: activeShopId,
+        entityId: selectedCustomer.id,
+        entityType: 'CUSTOMER',
+        type: 'DEBIT',
+        amount: amt,
+        balanceAfter: selectedCustomer.totalSpent + amt,
+        description: newDebtNote ? `Manual Debt: ${newDebtNote}` : 'Customer Credit Debt',
+        referenceId: newDebt.id,
+        timestamp: new Date().toISOString()
+      });
+
+      showSuccess(`Recorded KSh ${amt.toLocaleString()} debt for ${selectedCustomer.name}`);
+      setNewDebtAmount('');
+      setNewDebtNote('');
+      setShowAddDebtForm(false);
+
+      const [newCustomers, newDebts] = await Promise.all([
+        db.getCustomers(businessId),
+        db.getAllDebts(businessId)
+      ]);
+      setCustomers(newCustomers);
+      setAllDebts(newDebts);
+      await fetchHistoryAndDebts();
+    } catch (err: any) {
+      console.error("Error adding debt:", err);
+      alert(`Error adding debt: ${err.message}`);
+    } finally {
+      setIsProcessingDebt(false);
     }
   };
 
@@ -536,20 +594,78 @@ export const Customers: React.FC<CustomersProps> = ({ user, businessId, onViewLe
               </div>
 
               <div className="flex-1 overflow-y-auto p-6 space-y-8">
-                {/* Active Debts Section */}
-                {customerDebts.length > 0 && (
-                  <div className="space-y-4">
+                {/* Active Debts & Manual Debt Addition */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-rose-500">
                       <DollarSign className="w-5 h-5" />
                       <h4 className="text-sm font-black uppercase tracking-widest">Unpaid Debts ({customerDebts.length})</h4>
                     </div>
+                    <button
+                      onClick={() => setShowAddDebtForm(!showAddDebtForm)}
+                      className="px-3 py-1.5 bg-rose-500/10 text-rose-600 dark:text-rose-400 font-bold text-xs rounded-xl border border-rose-500/20 hover:bg-rose-500/20 transition-all flex items-center gap-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>{showAddDebtForm ? 'Cancel' : 'Add Debt'}</span>
+                    </button>
+                  </div>
+
+                  {showAddDebtForm && (
+                    <form onSubmit={handleAddManualDebt} className="p-4 bg-rose-500/5 border border-rose-500/20 rounded-2xl space-y-3">
+                      <p className="text-xs font-bold text-ink">Record New Customer Debt (Alerts if unpaid in 24h)</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[10px] font-bold text-muted uppercase block mb-1">Debt Amount (KSh)</label>
+                          <input
+                            type="number"
+                            required
+                            min="1"
+                            value={newDebtAmount}
+                            onChange={(e) => setNewDebtAmount(e.target.value)}
+                            placeholder="e.g. 1500"
+                            className="w-full px-3 py-2 bg-card border border-border rounded-xl text-xs font-bold text-ink"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-muted uppercase block mb-1">Reason / Note (Optional)</label>
+                          <input
+                            type="text"
+                            value={newDebtNote}
+                            onChange={(e) => setNewDebtNote(e.target.value)}
+                            placeholder="e.g. Goods taken on credit"
+                            className="w-full px-3 py-2 bg-card border border-border rounded-xl text-xs font-bold text-ink"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={isProcessingDebt}
+                        className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-98 disabled:opacity-50"
+                      >
+                        {isProcessingDebt ? 'Saving Debt...' : 'Save Customer Debt'}
+                      </button>
+                    </form>
+                  )}
+
+                  {customerDebts.length === 0 ? (
+                    <div className="p-4 bg-muted/20 rounded-2xl border border-border text-center text-xs text-muted font-medium">
+                      No unpaid debts for this customer.
+                    </div>
+                  ) : (
                     <div className="grid grid-cols-1 gap-3">
                       {customerDebts.map((debt) => (
                         <div key={debt.id} className="p-4 bg-rose-500/5 border border-rose-500/20 rounded-2xl flex items-center justify-between">
                           <div>
-                            <p className="text-[10px] font-bold text-muted uppercase">Amount Due</p>
-                            <p className="text-lg font-black text-rose-500">KSh{debt.remainingAmount.toLocaleString()}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-lg font-black text-rose-500">KSh{debt.remainingAmount.toLocaleString()}</p>
+                              {debt.status === 'OVERDUE' && (
+                                <span className="px-2 py-0.5 bg-rose-500 text-white text-[9px] font-black uppercase rounded-md tracking-wider">
+                                  OVERDUE (24h+)
+                                </span>
+                              )}
+                            </div>
                             <p className="text-[10px] text-muted font-bold">Ref: Sale #{debt.saleId.slice(-8).toUpperCase()}</p>
+                            <p className="text-[10px] text-muted font-medium">Added: {new Date(debt.createdAt || debt.dueDate).toLocaleString()}</p>
                           </div>
                           <button
                             onClick={() => handlePayDebt(debt.id, debt.remainingAmount)}
@@ -561,8 +677,8 @@ export const Customers: React.FC<CustomersProps> = ({ user, businessId, onViewLe
                         </div>
                       ))}
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
 
                 {/* Purchase History Section */}
                 <div className="space-y-4">

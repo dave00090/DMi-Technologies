@@ -526,14 +526,38 @@ class SyncService {
         if (!businessId) businessId = 'default-business';
       }
 
-      // 1. GATHER ALL LOCAL UNSYNCED RECORDS
+      // 1. GATHER ALL LOCAL RECORDS (unsynced queue & full snapshot)
       const pushChanges: Record<string, any[]> = {};
+      const fullSnapshot: Record<string, any[]> = {};
+
+      const resolveIdbImagesInObject = async (obj: any): Promise<any> => {
+        if (!obj || typeof obj !== 'object') return obj;
+        if (Array.isArray(obj)) {
+          return Promise.all(obj.map(item => resolveIdbImagesInObject(item)));
+        }
+        const newObj = { ...obj };
+        for (const k in newObj) {
+          if (typeof newObj[k] === 'string' && newObj[k].startsWith('idb://')) {
+            try {
+              const realImg = await localDb.getImage(newObj[k]);
+              if (realImg) newObj[k] = realImg;
+            } catch (e) {}
+          } else if (typeof newObj[k] === 'object' && newObj[k] !== null) {
+            newObj[k] = await resolveIdbImagesInObject(newObj[k]);
+          }
+        }
+        return newObj;
+      };
+
       for (const t of tables) {
         const allItems = getLocal<any[]>(t.key, []);
-        pushChanges[t.name] = allItems.filter(item => item && item.synced === false);
+        const unsyncedItems = allItems.filter(item => item && item.synced === false);
+        pushChanges[t.name] = await resolveIdbImagesInObject(unsyncedItems);
+        fullSnapshot[t.name] = await resolveIdbImagesInObject(allItems);
       }
 
       const totalPushRecords = Object.values(pushChanges).reduce((sum, list) => sum + list.length, 0);
+      const totalSnapshotRecords = Object.values(fullSnapshot).reduce((sum, list) => sum + list.length, 0);
 
       const targetUrl = this.getDisplayUrl();
       const isSupabase = targetUrl.includes('.supabase.co') || targetUrl.includes('/rest/v1') || !!import.meta.env.VITE_SUPABASE_URL;
@@ -546,33 +570,53 @@ class SyncService {
         const cleanUrl = customUrl.replace(/\/+$/, '').replace(/\/rest\/v1\/?$/, '');
         const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
         if (anonKey) {
-          activeSupabase = createClient(cleanUrl, anonKey);
+          activeSupabase = createClient(cleanUrl, anonKey, { auth: { persistSession: false } });
         }
       }
 
+      const activeLicenseKey = (localStorage.getItem('dmi_pos_license_key') || '').trim().toUpperCase();
+
       // 2. PUSH TO CLOUD OR MARK LOCALLY
-      if (totalPushRecords > 0) {
-        if (isSupabase) {
-          this.addLog('INFO', `Uploading ${totalPushRecords} queued offline transactions to Supabase Cloud...`);
+      if (isSupabase) {
+        if (totalSnapshotRecords > 0) {
+          if (totalPushRecords > 0) {
+            this.addLog('INFO', `Uploading ${totalPushRecords} queued offline transactions to Supabase Cloud...`);
+          }
           try {
             const statePayload = {
               businessId,
               shopId,
+              licenseKey: activeLicenseKey,
               updatedAt: new Date().toISOString(),
               pushedAt: new Date().toISOString(),
-              changes: pushChanges
+              changes: fullSnapshot
             };
 
-            const { error: sbErr } = await activeSupabase
-              .from('cloud_sync_state')
-              .upsert({
-                id: businessId,
-                data: statePayload,
-                updated_at: new Date().toISOString()
-              }, { onConflict: 'id' });
+            if (businessId) {
+              await activeSupabase
+                .from('cloud_sync_state')
+                .upsert({
+                  id: businessId,
+                  data: statePayload,
+                  updated_at: new Date().toISOString()
+                }, { onConflict: 'id' });
+            }
 
-            if (sbErr) {
-              console.warn('Supabase cloud_sync_state push note:', sbErr.message);
+            if (activeLicenseKey) {
+              await activeSupabase
+                .from('cloud_sync_state')
+                .upsert({
+                  id: activeLicenseKey,
+                  data: statePayload,
+                  updated_at: new Date().toISOString()
+                }, { onConflict: 'id' });
+
+              if (businessId) {
+                await activeSupabase
+                  .from('licenses')
+                  .update({ business_id: businessId })
+                  .eq('license_key', activeLicenseKey);
+              }
             }
 
             if (pushChanges['sales'] && pushChanges['sales'].length > 0) {
@@ -607,7 +651,9 @@ class SyncService {
               const items = pushChanges[t.name] || [];
               syncedIdsMap[t.name] = items.map((i: any) => i.id || i.uid).filter(Boolean);
             }
-            this.addLog('SUCCESS', `Successfully synced ${totalPushRecords} transactions to Supabase Cloud database.`);
+            if (totalPushRecords > 0) {
+              this.addLog('SUCCESS', `Successfully synced ${totalPushRecords} transactions to Supabase Cloud database.`);
+            }
           } catch (sbErr: any) {
             console.warn('Supabase push fallback to local verification:', sbErr);
             if (isManual) {
@@ -618,41 +664,41 @@ class SyncService {
               this.addLog('SUCCESS', `Verified and marked ${totalPushRecords} local ledger records as synchronized.`);
             }
           }
-        } else {
-          this.addLog('INFO', `Uploading ${totalPushRecords} local transactions to sync server...`);
-          try {
-            const pushRes = await this.getApiClient().post('/api/sync/push', {
-              businessId,
-              shopId,
-              changes: pushChanges
-            });
+        }
+      } else if (totalPushRecords > 0) {
+        this.addLog('INFO', `Uploading ${totalPushRecords} local transactions to sync server...`);
+        try {
+          const pushRes = await this.getApiClient().post('/api/sync/push', {
+            businessId,
+            shopId,
+            changes: pushChanges
+          });
 
-            if (typeof pushRes.data === 'string' && (pushRes.data.includes('<!DOCTYPE html') || pushRes.data.includes('<html'))) {
-              throw new Error('Sync gateway URL points to a static frontend site instead of a live API server.');
-            }
+          if (typeof pushRes.data === 'string' && (pushRes.data.includes('<!DOCTYPE html') || pushRes.data.includes('<html'))) {
+            throw new Error('Sync gateway URL points to a static frontend site instead of a live API server.');
+          }
 
-            if (pushRes.data?.status === 'SUCCESS') {
-              syncedIdsMap = pushRes.data.syncedIds || {};
-              if (Object.keys(syncedIdsMap).length === 0) {
-                for (const t of tables) {
-                  const items = pushChanges[t.name] || [];
-                  syncedIdsMap[t.name] = items.map((i: any) => i.id || i.uid).filter(Boolean);
-                }
-              }
-              this.addLog('SUCCESS', 'Successfully pushed local transactions to cloud server.');
-            } else {
-              throw new Error('Push rejected by sync server');
-            }
-          } catch (apiErr: any) {
-            if (isManual) {
+          if (pushRes.data?.status === 'SUCCESS') {
+            syncedIdsMap = pushRes.data.syncedIds || {};
+            if (Object.keys(syncedIdsMap).length === 0) {
               for (const t of tables) {
                 const items = pushChanges[t.name] || [];
                 syncedIdsMap[t.name] = items.map((i: any) => i.id || i.uid).filter(Boolean);
               }
-              this.addLog('SUCCESS', `Local Standalone Mode: Verified and cleared ${totalPushRecords} queued offline records in local database.`);
-            } else {
-              throw apiErr;
             }
+            this.addLog('SUCCESS', 'Successfully pushed local transactions to cloud server.');
+          } else {
+            throw new Error('Push rejected by sync server');
+          }
+        } catch (apiErr: any) {
+          if (isManual) {
+            for (const t of tables) {
+              const items = pushChanges[t.name] || [];
+              syncedIdsMap[t.name] = items.map((i: any) => i.id || i.uid).filter(Boolean);
+            }
+            this.addLog('SUCCESS', `Local Standalone Mode: Verified and cleared ${totalPushRecords} queued offline records in local database.`);
+          } else {
+            throw apiErr;
           }
         }
       }
@@ -676,38 +722,49 @@ class SyncService {
       // 4. PULL CLOUD UPDATES
       if (isSupabase) {
         try {
-          let cloudRow = null;
+          let cloudRow: any = null;
 
-          // 1. Direct fetch by active business ID
-          const { data: byBiz } = await activeSupabase
-            .from('cloud_sync_state')
-            .select('data, updated_at')
-            .eq('id', businessId)
-            .single();
+          // A. Direct fetch by active business ID
+          if (businessId) {
+            const { data: byBiz } = await activeSupabase
+              .from('cloud_sync_state')
+              .select('data, updated_at')
+              .eq('id', businessId)
+              .maybeSingle();
+            if (byBiz?.data?.changes) {
+              cloudRow = byBiz;
+            }
+          }
 
-          cloudRow = byBiz;
-
-          // 2. Fallback: Lookup by active license key if businessId not found
-          const activeLicenseKey = localStorage.getItem('dmi_pos_license_key');
+          // B. Fetch by active license key as id
           if (!cloudRow && activeLicenseKey) {
-            const cleanKey = activeLicenseKey.trim().toUpperCase();
+            const { data: byLicKey } = await activeSupabase
+              .from('cloud_sync_state')
+              .select('data, updated_at')
+              .eq('id', activeLicenseKey)
+              .maybeSingle();
+            if (byLicKey?.data?.changes) {
+              cloudRow = byLicKey;
+            }
+          }
+
+          // C. Fallback: Lookup via license record in 'licenses' table
+          if (!cloudRow && activeLicenseKey) {
             const { data: licRecord } = await activeSupabase
               .from('licenses')
               .select('id, business_id')
-              .eq('license_key', cleanKey)
-              .single();
+              .eq('license_key', activeLicenseKey)
+              .maybeSingle();
 
             const targetBizId = licRecord?.business_id || licRecord?.id;
-            if (targetBizId && targetBizId !== businessId) {
-              const { data: byLic } = await activeSupabase
+            if (targetBizId) {
+              const { data: byLicRec } = await activeSupabase
                 .from('cloud_sync_state')
                 .select('data, updated_at')
                 .eq('id', targetBizId)
-                .single();
-              if (byLic) {
-                cloudRow = byLic;
-                businessId = targetBizId;
-                localDb.setActiveBusinessId(businessId);
+                .maybeSingle();
+              if (byLicRec?.data?.changes) {
+                cloudRow = byLicRec;
               }
             }
           }
@@ -735,14 +792,34 @@ class SyncService {
                 pulledCount += pulledItems.length;
               }
             }
+
+            // Sync active business and shop IDs onto new device
+            const pulledBusinesses = serverData['businesses'];
+            if (pulledBusinesses && Array.isArray(pulledBusinesses) && pulledBusinesses.length > 0) {
+              const activeBiz = pulledBusinesses[0];
+              if (activeBiz && activeBiz.id) {
+                localDb.setActiveBusinessId(activeBiz.id);
+              }
+            }
+
+            const pulledShops = serverData['shops'];
+            if (pulledShops && Array.isArray(pulledShops) && pulledShops.length > 0) {
+              const activeShop = pulledShops[0];
+              if (activeShop && activeShop.id) {
+                localDb.setActiveShopId(activeShop.id);
+              }
+            }
+
             if (pulledCount > 0) {
               this.addLog('SUCCESS', `Downloaded & synchronized ${pulledCount} cloud business records to this terminal.`);
               window.dispatchEvent(new CustomEvent('business-changed'));
+              window.dispatchEvent(new CustomEvent('shop-changed'));
+              window.dispatchEvent(new CustomEvent('storage-sync'));
               window.dispatchEvent(new CustomEvent('sync-completed'));
             }
           }
         } catch (pullErr) {
-          // Non-blocking pull
+          console.warn('Pull cloud state error:', pullErr);
         }
       } else {
         try {

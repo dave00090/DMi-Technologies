@@ -216,9 +216,6 @@ const offloadLargeFields = async (obj: any, key: string): Promise<any> => {
 
 // Helper to set data to localStorage with automatic IndexedDB offloading for large fields
 export async function setLocal<Value>(key: string, data: Value): Promise<void> {
-  // Update cache immediately
-  dbCache[key] = data;
-  
   // Choose if this key should be encrypted at rest on disk
   const isExcludedKey = key === STORAGE_KEYS.SETTINGS || 
                          key === STORAGE_KEYS.ACTIVE_BUSINESS_ID ||
@@ -236,6 +233,9 @@ export async function setLocal<Value>(key: string, data: Value): Promise<void> {
   try {
     processedData = await offloadLargeFields(data, key);
   } catch (e) {}
+
+  // Update cache immediately with offloaded data
+  dbCache[key] = processedData;
 
   let persistentData: any = processedData;
   if (shouldEncrypt && processedData !== null && processedData !== undefined) {
@@ -643,6 +643,17 @@ export const localDb = {
     const updatedDebts = allDebts.map(d => d.id === debtId ? { ...d, remainingAmount: 0, status: 'PAID' as const, synced: false, lastUpdated: new Date().toISOString() } : d);
     await setLocal(STORAGE_KEYS.DEBTS, updatedDebts);
 
+    // 1b. Mark associated DEBT_OVERDUE alert as READ
+    try {
+      const alerts = getLocal<Alert[]>(STORAGE_KEYS.ALERTS, []);
+      const updatedAlerts = alerts.map(a => 
+        a.type === 'DEBT_OVERDUE' && a.details?.debtId === debtId ? { ...a, status: 'READ' as const } : a
+      );
+      await setLocal(STORAGE_KEYS.ALERTS, updatedAlerts);
+    } catch (e) {
+      console.warn('Error clearing debt alert:', e);
+    }
+
     // 2. Create a generic Sale for the payment representation (so it shows in recent transactions)
     // IMPORTANT: We use a special category "DEBT_PAYMENT" to distinguish it if needed
     const sale: Omit<Sale, 'id'> = {
@@ -871,27 +882,58 @@ export const localDb = {
     }
     if (changed) await setLocal(STORAGE_KEYS.PRODUCTS, products);
 
-    // IndexedDB Cleanup: Remove orphaned images
+    // IndexedDB Cleanup: Remove orphaned images safely
     try {
       const allKeys = await idbKeys(customStore);
       const imageKeys = allKeys.filter((k: any) => typeof k === 'string' && k.startsWith('img_'));
       
-      // Collect all referenced idb:// keys from localStorage
       const referencedKeys = new Set<string>();
+
+      const checkStringForIdb = (str: string | null | undefined) => {
+        if (!str) return;
+        const matches = str.match(/idb:\/\/img_[a-zA-Z0-9_.-]+/g);
+        if (matches) {
+          matches.forEach(m => referencedKeys.add(m.replace('idb://', '')));
+        }
+      };
+
+      // 1. Scan in-memory cache
+      try {
+        checkStringForIdb(JSON.stringify(dbCache));
+      } catch (e) {}
+
+      // 2. Scan localStorage (decrypting if needed)
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         if (k) {
-          const val = localStorage.getItem(k);
+          let val = localStorage.getItem(k);
           if (val) {
-            const matches = val.match(/idb:\/\/img_[a-zA-Z0-9_.-]+/g);
-            if (matches) {
-              matches.forEach(m => referencedKeys.add(m.replace('idb://', '')));
+            if (val.startsWith('ENC__')) {
+              val = decryptString(val);
             }
+            checkStringForIdb(val);
           }
         }
       }
 
-      // Delete orphaned keys
+      // 3. Scan non-image IndexedDB stored values
+      for (const k of allKeys) {
+        if (typeof k === 'string' && !k.startsWith('img_')) {
+          try {
+            let val = await idbGet(k, customStore);
+            if (typeof val === 'string') {
+              if (val.startsWith('ENC__')) {
+                val = decryptString(val);
+              }
+              checkStringForIdb(val);
+            } else if (typeof val === 'object' && val !== null) {
+              checkStringForIdb(JSON.stringify(val));
+            }
+          } catch (e) {}
+        }
+      }
+
+      // Delete only genuinely orphaned image keys
       for (const key of imageKeys) {
         if (!referencedKeys.has(key as string)) {
           console.log(`Deleting orphaned image from IndexedDB: ${key}`);
@@ -912,6 +954,15 @@ export const localDb = {
       return await idbGet(key, customStore) || '';
     }
     return url;
+  },
+
+  saveImage: async (key: string, base64: string): Promise<void> => {
+    const cleanKey = key.replace('idb://', '');
+    await idbSet(cleanKey, base64, customStore);
+  },
+
+  saveData: async (key: string, data: any): Promise<void> => {
+    await setLocal(key, data);
   },
 
   // Guest Requests & Feedback (Airbnbs / Apartments / Hotels)
