@@ -633,7 +633,8 @@ class SyncService {
                 customer_name: s.customerName || null,
                 tax_amount: s.taxAmount || 0,
                 tax_rate: s.taxRate || 0,
-                receipt_number: s.receiptNumber || s.id,
+                receipt_no: s.receiptNo || s.receiptNumber || s.id,
+                receipt_number: s.receiptNumber || s.receiptNo || s.id,
                 items: s.items || [],
                 timestamp: s.timestamp || new Date().toISOString()
               }));

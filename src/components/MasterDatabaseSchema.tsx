@@ -81,14 +81,17 @@ END $$;`
       description: 'Centrally records real-time terminal checkout figures, item arrays, and mpesa references for analytical reporting.',
       sql: `CREATE TABLE IF NOT EXISTS public.sales (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    business_id VARCHAR(255) NOT NULL,
+    business_id VARCHAR(255) DEFAULT 'default-business',
     shop_id VARCHAR(255),
+    receipt_no VARCHAR(100),
+    receipt_number VARCHAR(100),
     items JSONB NOT NULL,
     total NUMERIC(15, 2) DEFAULT 0.00,
     total_amount NUMERIC(15, 2) DEFAULT 0.00,
     payment_method VARCHAR(50) DEFAULT 'CASH',
     cashier_id VARCHAR(255) DEFAULT 'SYSTEM',
     cashier_name VARCHAR(255) DEFAULT 'Staff',
+    client_name VARCHAR(255),
     customer_id VARCHAR(255),
     customer_name VARCHAR(255),
     loyalty_points_earned INT DEFAULT 0,
@@ -105,7 +108,9 @@ END $$;`
 );
 
 -- Ensure backwards-compatible columns exist
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS items JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS receipt_no VARCHAR(100);
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS receipt_number VARCHAR(100);
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS client_name VARCHAR(255);
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS total NUMERIC(15, 2) DEFAULT 0.00;
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS total_amount NUMERIC(15, 2) DEFAULT 0.00;
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS tax_amount NUMERIC(15, 2) DEFAULT 0.00;
@@ -330,47 +335,6 @@ CREATE TABLE IF NOT EXISTS public.ledger_entries (
     amount NUMERIC(15, 2) NOT NULL,
     balance_after NUMERIC(15, 2) NOT NULL,
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS public.expenses (
-    id VARCHAR(255) PRIMARY KEY,
-    business_id VARCHAR(255) REFERENCES public.businesses(id) ON DELETE CASCADE,
-    shop_id VARCHAR(255),
-    category VARCHAR(100) NOT NULL,
-    amount NUMERIC(15, 2) NOT NULL DEFAULT 0.00,
-    description TEXT,
-    date DATE DEFAULT CURRENT_DATE,
-    payment_method VARCHAR(50) DEFAULT 'CASH',
-    recorded_by VARCHAR(255),
-    receipt_url TEXT,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS public.customers (
-    id VARCHAR(255) PRIMARY KEY,
-    business_id VARCHAR(255) REFERENCES public.businesses(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    phone VARCHAR(50),
-    email VARCHAR(255),
-    address TEXT,
-    loyalty_points INT DEFAULT 0,
-    total_spent NUMERIC(15, 2) DEFAULT 0.00,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS public.suppliers (
-    id VARCHAR(255) PRIMARY KEY,
-    business_id VARCHAR(255) REFERENCES public.businesses(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    contact_person VARCHAR(255),
-    phone VARCHAR(50),
-    email VARCHAR(255),
-    address TEXT,
-    category VARCHAR(100),
-    total_supplied NUMERIC(15, 2) DEFAULT 0.00,
-    total_paid NUMERIC(15, 2) DEFAULT 0.00,
-    balance NUMERIC(15, 2) DEFAULT 0.00,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );`
     }
   ];
@@ -379,26 +343,7 @@ CREATE TABLE IF NOT EXISTS public.suppliers (
     {
       name: 'profit_and_loss_analytics',
       description: 'Computes total profit margins automatically by auditing raw sales turnover, inventory costs (COGs), and daily petty expenses.',
-      sql: `-- Ensure columns and tables exist before computing analytics
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS items JSONB DEFAULT '[]'::jsonb;
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS total NUMERIC(15, 2) DEFAULT 0.00;
-ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS tax_amount NUMERIC(15, 2) DEFAULT 0.00;
-
-CREATE TABLE IF NOT EXISTS public.expenses (
-    id VARCHAR(255) PRIMARY KEY,
-    business_id VARCHAR(255),
-    shop_id VARCHAR(255),
-    category VARCHAR(100),
-    amount NUMERIC(15, 2) DEFAULT 0.00,
-    description TEXT,
-    date DATE DEFAULT CURRENT_DATE,
-    payment_method VARCHAR(50) DEFAULT 'CASH',
-    recorded_by VARCHAR(255),
-    receipt_url TEXT,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-WITH revenue_summary AS (
+      sql: `WITH revenue_summary AS (
     SELECT 
         COALESCE(SUM(total), 0) AS gross_sales_revenue,
         COALESCE(SUM(tax_amount), 0) AS gathered_sales_tax
@@ -409,13 +354,13 @@ cost_summary AS (
     SELECT 
         COALESCE(SUM((item->>'buying_price')::NUMERIC * (item->>'quantity')::INT), 0) AS inventory_cogs
     FROM public.sales,
-    LATERAL jsonb_array_elements(COALESCE(items, '[]'::jsonb)) AS item
+    LATERAL jsonb_array_elements(items) AS item
     WHERE timestamp::DATE = CURRENT_DATE
 ),
 expense_summary AS (
     SELECT 
         COALESCE(SUM(amount), 0) AS total_daily_petty_expenses
-    FROM public.expenses 
+    FROM expenses 
     WHERE date = CURRENT_DATE
 )
 SELECT 
