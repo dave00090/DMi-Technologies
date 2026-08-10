@@ -181,5 +181,35 @@ export const integrityEngine = {
       status,
       issues
     };
+  },
+
+  repairBrokenImageLinks: async (): Promise<{ repairedCount: number }> => {
+    const activeBizId = localDb.getActiveBusinessId() || 'default-business';
+    const activeShopId = localDb.getActiveShopId() || 'default-shop';
+    const products = await localDb.getProducts(activeBizId, activeShopId);
+
+    let idbImageKeys: string[] = [];
+    try {
+      const allKeys = await keys();
+      idbImageKeys = allKeys.filter((k: any) => typeof k === 'string' && k.startsWith('img_')) as string[];
+    } catch (e) {
+      console.warn('Could not read IndexedDB keys during image repair:', e);
+    }
+
+    const idbKeySet = new Set(idbImageKeys);
+    let repairedCount = 0;
+
+    for (const p of products) {
+      if (p.imageUrl && p.imageUrl.startsWith('idb://')) {
+        const cleanKey = p.imageUrl.replace('idb://', '');
+        if (!idbKeySet.has(cleanKey)) {
+          // Remove broken image pointer so product uses default placeholder cleanly
+          await localDb.updateProduct(p.id, { imageUrl: '' });
+          repairedCount++;
+        }
+      }
+    }
+
+    return { repairedCount };
   }
 };

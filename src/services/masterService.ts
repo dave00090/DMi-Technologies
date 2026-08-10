@@ -33,7 +33,14 @@ const mockSupabase = {
 } as any;
 
 export const supabase = supabaseUrl && supabaseKey 
-  ? createClient(supabaseUrl, supabaseKey)
+  ? createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        storageKey: 'dmi_pos_gotrue_master'
+      }
+    })
   : mockSupabase;
 
 export interface License {

@@ -33,7 +33,8 @@ import {
   Info,
   XCircle,
   RefreshCw,
-  Database
+  Database,
+  Wrench
 } from 'lucide-react';
 import { localDb, removeLocal } from '../services/localDb';
 import { dmiDataEngine } from '../services/dmiDataEngine';
@@ -93,6 +94,22 @@ export const Settings: React.FC<SettingsProps> = ({ user, businessId, shopId, on
       alert(`Audit failed: ${e.message}`);
     } finally {
       setRunningAudit(false);
+    }
+  };
+
+  const [repairingImages, setRepairingImages] = useState(false);
+
+  const handleRepairImages = async () => {
+    setRepairingImages(true);
+    try {
+      const { repairedCount } = await integrityEngine.repairBrokenImageLinks();
+      showSuccess(`Repaired ${repairedCount} product image reference(s)!`);
+      const report = await integrityEngine.runAudit();
+      setAuditReport(report);
+    } catch (e: any) {
+      alert(`Repair failed: ${e.message}`);
+    } finally {
+      setRepairingImages(false);
     }
   };
 
@@ -1104,15 +1121,28 @@ export const Settings: React.FC<SettingsProps> = ({ user, businessId, shopId, on
               </div>
 
               {/* MODAL FOOTER */}
-              <div className="flex items-center justify-between pt-4 border-t border-border">
-                <button
-                  onClick={handleRunAudit}
-                  disabled={runningAudit}
-                  className="px-4 py-2 bg-muted hover:bg-card text-ink font-bold text-xs rounded-xl border border-border flex items-center gap-2 cursor-pointer transition-all"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${runningAudit ? 'animate-spin' : ''}`} />
-                  <span>Re-run Audit</span>
-                </button>
+              <div className="flex items-center justify-between pt-4 border-t border-border flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleRunAudit}
+                    disabled={runningAudit}
+                    className="px-4 py-2 bg-muted hover:bg-card text-ink font-bold text-xs rounded-xl border border-border flex items-center gap-2 cursor-pointer transition-all"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${runningAudit ? 'animate-spin' : ''}`} />
+                    <span>Re-run Audit</span>
+                  </button>
+
+                  {auditReport.issues.some(i => i.category === 'IMAGE_LINK') && (
+                    <button
+                      onClick={handleRepairImages}
+                      disabled={repairingImages}
+                      className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
+                    >
+                      <Wrench className={`w-3.5 h-3.5 ${repairingImages ? 'animate-spin' : ''}`} />
+                      <span>Fix Broken Image Links ({auditReport.issues.filter(i => i.category === 'IMAGE_LINK').length})</span>
+                    </button>
+                  )}
+                </div>
 
                 <button
                   onClick={() => setShowAuditModal(false)}
