@@ -534,7 +534,7 @@ export default function App() {
       case 'pos':
         return <POS user={user} businessId={activeBusinessId} shopId={activeShopId} />;
       case 'dashboard':
-        return user.role === 'admin' ? <Dashboard user={user} businessId={activeBusinessId} shopId={activeShopId} /> : <POS user={user} businessId={activeBusinessId} shopId={activeShopId} />;
+        return (user.role === 'admin' || user.role === 'staff') ? <Dashboard user={user} businessId={activeBusinessId} shopId={activeShopId} /> : <POS user={user} businessId={activeBusinessId} shopId={activeShopId} />;
       case 'inventory':
         return user.role === 'hr' ? <HRM businessId={activeBusinessId} shopId={activeShopId} user={user} /> : <Inventory user={user} businessId={activeBusinessId} shopId={activeShopId} />;
       case 'invoices':
@@ -571,9 +571,9 @@ export default function App() {
       case 'hrm':
         return <HRM businessId={activeBusinessId} shopId={activeShopId} user={user} />;
       case 'ledger':
-        return user.role === 'admin' ? <Ledger businessId={activeBusinessId} user={user} initialSelection={ledgerSelection} onClearSelection={() => setLedgerSelection(null)} /> : <POS user={user} businessId={activeBusinessId} shopId={activeShopId} />;
+        return (user.role === 'admin' || user.role === 'staff') ? <Ledger businessId={activeBusinessId} user={user} initialSelection={ledgerSelection} onClearSelection={() => setLedgerSelection(null)} /> : <POS user={user} businessId={activeBusinessId} shopId={activeShopId} />;
       case 'alerts':
-        return user.role === 'admin' ? <Dashboard user={user} businessId={activeBusinessId} shopId={activeShopId} /> : <POS user={user} businessId={activeBusinessId} shopId={activeShopId} />;
+        return (user.role === 'admin' || user.role === 'staff') ? <Dashboard user={user} businessId={activeBusinessId} shopId={activeShopId} /> : <POS user={user} businessId={activeBusinessId} shopId={activeShopId} />;
       default:
         return <POS user={user} businessId={activeBusinessId} shopId={activeShopId} />;
     }

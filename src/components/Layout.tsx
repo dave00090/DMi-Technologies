@@ -103,19 +103,19 @@ export const Layout: React.FC<LayoutProps> = ({
 
   const navItems = [
     { id: 'pos', label: 'Sales POS', icon: ShoppingCart, roles: ['admin', 'staff'] },
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin'] },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'staff'] },
     { id: 'inventory', label: 'Inventory', icon: Package, roles: ['admin', 'staff'] },
     { id: 'invoices', label: 'Invoices', icon: FileText, roles: ['admin', 'staff'] },
     ...(businessType === 'HOTEL' ? [
-      { id: 'guest-requests', label: 'Guest Desk', icon: HeartHandshake, roles: ['admin', 'staff'] }
+      { id: 'guest-requests', label: 'Guest Desk', icon: HeartHandshake, roles: ['admin'] }
     ] : []),
     { id: 'expenses', label: 'Expenses', icon: Receipt, roles: ['admin'] },
     { id: 'suppliers', label: 'Suppliers', icon: Truck, roles: ['admin'] },
     { id: 'hrm', label: 'HRM', icon: UserCheck, roles: ['admin', 'hr'] },
-    { id: 'ledger', label: 'Ledger', icon: History, roles: ['admin'] },
+    { id: 'ledger', label: 'Ledger', icon: History, roles: ['admin', 'staff'] },
     { id: 'reports', label: 'Reports', icon: BarChart3, roles: ['admin'] },
-    { id: 'customers', label: 'Customers', icon: Users, roles: ['admin'] },
-    { id: 'alerts', label: 'Alerts', icon: Bell, roles: ['admin'], badge: unreadAlerts },
+    { id: 'customers', label: 'Customers', icon: Users, roles: ['admin', 'staff'] },
+    { id: 'alerts', label: 'Alerts', icon: Bell, roles: ['admin', 'staff'], badge: unreadAlerts },
     { id: 'settings', label: 'Settings', icon: Palette, roles: ['admin'] },
   ];
 

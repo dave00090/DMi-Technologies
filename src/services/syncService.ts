@@ -184,18 +184,21 @@ class SyncService {
 
   private autoSyncDebounceTimer: any = null;
 
-  public triggerImmediateChangeSync() {
+  public triggerImmediateChangeSync(forceSync: boolean = false) {
     if (this.autoSyncDebounceTimer) {
       clearTimeout(this.autoSyncDebounceTimer);
     }
     this.autoSyncDebounceTimer = setTimeout(() => {
       if (!this.isSyncing) {
-        this.addLog('INFO', 'Data change detected. Executing real-time automatic background sync...');
-        this.syncNow(false).catch((e) => {
-          console.warn('Real-time auto-sync warning:', e);
-        });
+        // Only trigger background sync if there are actual pending unsynced changes or if forced
+        if (forceSync || this.getPendingCount() > 0) {
+          this.addLog('INFO', 'Data change detected. Executing real-time automatic background sync...');
+          this.syncNow(false).catch((e) => {
+            console.warn('Real-time auto-sync warning:', e);
+          });
+        }
       }
-    }, 600);
+    }, 800);
   }
 
   private async init() {
@@ -222,7 +225,12 @@ class SyncService {
     ];
 
     changeEvents.forEach(evtName => {
-      window.addEventListener(evtName, () => {
+      window.addEventListener(evtName, (e: any) => {
+        // Ignore internal sync stats updates to prevent infinite feedback loops
+        const updatedKey = e?.detail?.key;
+        if (updatedKey === STORAGE_KEYS.SYNC_STATS || updatedKey === 'dmi_pos_sync_stats') {
+          return;
+        }
         this.triggerImmediateChangeSync();
       });
     });
@@ -250,10 +258,12 @@ class SyncService {
 
   private notify() {
     const stats = this.getStats();
-    setLocal(STORAGE_KEYS.SYNC_STATS, {
-      lastSyncTime: stats.lastSyncTime,
-      logs: this.syncLogs.slice(0, 50),
-    });
+    try {
+      localStorage.setItem(STORAGE_KEYS.SYNC_STATS, JSON.stringify({
+        lastSyncTime: stats.lastSyncTime,
+        logs: this.syncLogs.slice(0, 50),
+      }));
+    } catch (e) {}
     this.listeners.forEach(cb => cb(stats));
     window.dispatchEvent(new CustomEvent('sync-stats-updated', { detail: stats }));
   }

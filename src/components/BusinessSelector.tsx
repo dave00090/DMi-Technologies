@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../services/db';
 import { BusinessProfile, BusinessType, UserProfile } from '../types';
-import { Plus, Building2, Store, ChevronRight, Briefcase, Trash2, X, AlertTriangle, Loader2 } from 'lucide-react';
+import { Plus, Building2, Store, ChevronRight, Briefcase, Trash2, X, AlertTriangle, Loader2, Upload, FileCheck, Database } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { compressImage } from '../lib/imageUtils';
+import { dmiDataEngine } from '../services/dmiDataEngine';
 
 import { BRAND_LOGO_URL, DMI_FALLBACK_ICON } from '../constants';
 
@@ -16,9 +17,13 @@ interface BusinessSelectorProps {
 }
 
 export const BusinessSelector: React.FC<BusinessSelectorProps> = ({ onSelect, onLogout, user }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [businesses, setBusinesses] = useState<BusinessProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [showImportPrompt, setShowImportPrompt] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState('');
   const [businessToDelete, setBusinessToDelete] = useState<BusinessProfile | null>(null);
   const [newBusiness, setNewBusiness] = useState({
     name: '',
@@ -43,6 +48,10 @@ export const BusinessSelector: React.FC<BusinessSelectorProps> = ({ onSelect, on
       try {
         const data = await db.getBusinesses();
         setBusinesses(data);
+        const isJustActivated = localStorage.getItem('dmi_just_activated') === 'true';
+        if (isJustActivated || data.length === 0) {
+          setShowImportPrompt(true);
+        }
       } catch (error) {
         console.error('Error fetching businesses:', error);
       } finally {
@@ -51,6 +60,44 @@ export const BusinessSelector: React.FC<BusinessSelectorProps> = ({ onSelect, on
     };
     fetchBusinesses();
   }, []);
+
+  const handleImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    setImportStatus('Reading system backup file...');
+
+    try {
+      const text = await file.text();
+      setImportStatus('Restoring database snapshot records & IndexedDB assets...');
+      const result = await dmiDataEngine.importDmiDataBundle(text);
+
+      if (result.success) {
+        localStorage.removeItem('dmi_just_activated');
+        setShowImportPrompt(false);
+        alert(`Backup Restored Successfully!\n\n${result.message}`);
+        
+        const updated = await db.getBusinesses();
+        setBusinesses(updated);
+        
+        if (updated.length > 0) {
+          onSelect(updated[0]);
+        }
+      } else {
+        alert(`Import Notice:\n${result.message}`);
+      }
+    } catch (err: any) {
+      console.error('Import file error:', err);
+      alert(`Failed to import backup file: ${err.message || err}`);
+    } finally {
+      setIsImporting(false);
+      setImportStatus('');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -209,8 +256,98 @@ export const BusinessSelector: React.FC<BusinessSelectorProps> = ({ onSelect, on
             </div>
             <span className="font-bold">Create New Business</span>
           </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.02, translateY: -4 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => fileInputRef.current?.click()}
+            className="p-8 bg-indigo-50/50 dark:bg-indigo-950/20 border-2 border-dashed border-indigo-500/40 rounded-[32px] text-left hover:border-emerald-500 transition-all flex flex-col items-center justify-center text-indigo-600 dark:text-indigo-400 group"
+          >
+            <div className="w-14 h-14 bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 rounded-2xl flex items-center justify-center mb-4 group-hover:bg-emerald-500/20 group-hover:text-emerald-500 transition-colors">
+              <Upload className="w-7 h-7" />
+            </div>
+            <span className="font-bold text-ink group-hover:text-emerald-600 transition-colors">Import System Backup</span>
+            <span className="text-[11px] text-muted font-medium mt-1">Restore .dmidata or .json file</span>
+          </motion.button>
         </div>
       </div>
+
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        accept=".dmidata,.json" 
+        onChange={handleImportFileChange} 
+        className="hidden" 
+      />
+
+      <AnimatePresence>
+        {isImporting && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-ink/70 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-card w-full max-w-md rounded-[32px] p-8 shadow-2xl border border-indigo-500/30 text-center space-y-4"
+            >
+              <div className="w-16 h-16 bg-indigo-600/10 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto animate-pulse">
+                <Database className="w-8 h-8 animate-bounce" />
+              </div>
+              <h3 className="text-xl font-black text-ink">Restoring Backup Data</h3>
+              <p className="text-sm text-muted animate-pulse">{importStatus || 'Processing system records...'}</p>
+              <div className="flex justify-center pt-2">
+                <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {showImportPrompt && !isImporting && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-ink/70 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-card w-full max-w-lg rounded-[36px] p-8 shadow-2xl border border-indigo-500/30 text-center relative overflow-hidden"
+            >
+              <div className="w-16 h-16 bg-gradient-to-tr from-indigo-600 to-emerald-500 text-white rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-lg shadow-indigo-500/20">
+                <FileCheck className="w-8 h-8" />
+              </div>
+              <div className="inline-block px-3 py-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 rounded-full text-xs font-black uppercase tracking-wider mb-3">
+                License Activated & System Ready
+              </div>
+              <h2 className="text-2xl font-black text-ink mb-2">Import Previous System Backup?</h2>
+              <p className="text-muted text-sm leading-relaxed mb-6">
+                Do you have an existing <strong>.dmidata</strong> or <strong>.json</strong> backup file from a previous system installation? You can restore your backup now to load all your businesses, products, sales ledgers, and settings directly without creating a new business from scratch.
+              </p>
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={() => {
+                    setShowImportPrompt(false);
+                    localStorage.removeItem('dmi_just_activated');
+                    fileInputRef.current?.click();
+                  }}
+                  className="flex-1 px-5 py-3.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-extrabold rounded-2xl shadow-lg shadow-indigo-500/25 transition-all flex items-center justify-center gap-2 text-sm"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Import Backup File</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowImportPrompt(false);
+                    localStorage.removeItem('dmi_just_activated');
+                    if (businesses.length === 0) {
+                      setShowCreate(true);
+                    }
+                  }}
+                  className="flex-1 px-5 py-3.5 bg-bg text-ink border border-border hover:bg-muted font-bold rounded-2xl transition-all text-sm"
+                >
+                  {businesses.length === 0 ? 'Create New Business' : 'Continue to Dashboard'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {businessToDelete && (

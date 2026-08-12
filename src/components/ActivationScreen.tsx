@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { Lock, ShieldCheck, AlertCircle, Store, Info, Award, TrendingUp, Layers, CheckCircle, HelpCircle, DollarSign, Copy, ArrowLeft, Smartphone } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Lock, ShieldCheck, AlertCircle, Store, Info, Award, TrendingUp, Layers, CheckCircle, HelpCircle, DollarSign, Copy, ArrowLeft, Smartphone, Upload, Database, FileCheck, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../services/db';
 import { localDb } from '../services/localDb';
 import { syncService } from '../services/syncService';
+import { dmiDataEngine } from '../services/dmiDataEngine';
 import { SafeImage } from './SafeImage';
 import { masterService, supabase } from '../services/masterService';
 
@@ -31,6 +32,56 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
   const [generatedKey, setGeneratedKey] = useState('');
   const [verifyingStatus, setVerifyingStatus] = useState('');
   const [copiedKey, setCopiedKey] = useState(false);
+
+  // Backup Import States
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isImportingBackup, setIsImportingBackup] = useState(false);
+  const [importBackupStatus, setImportBackupStatus] = useState('');
+
+  const handleImportBackupFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImportingBackup(true);
+    setImportBackupStatus('Reading backup bundle file...');
+    setError(null);
+
+    try {
+      const text = await file.text();
+      setImportBackupStatus('Restoring database snapshot records & IndexedDB assets...');
+      const result = await dmiDataEngine.importDmiDataBundle(text);
+
+      if (result.success) {
+        setImportBackupStatus('Restoration complete! Launching system...');
+        
+        // Retrieve license key from local storage if present
+        const savedKey = localStorage.getItem('dmi_pos_license_key') || localStorage.getItem('dmi_pos_activated_license');
+        if (savedKey) {
+          setPin(savedKey);
+        }
+
+        await db.activate('8124');
+        localStorage.setItem('dmi_just_activated', 'true');
+        
+        setTimeout(() => {
+          setIsImportingBackup(false);
+          alert(`Backup Restored Successfully!\n\n${result.message}`);
+          onActivated();
+        }, 500);
+      } else {
+        setIsImportingBackup(false);
+        setError(`Backup Import Failed: ${result.message}`);
+      }
+    } catch (err: any) {
+      console.error('Activation backup import error:', err);
+      setIsImportingBackup(false);
+      setError(`Failed to process backup file: ${err.message || err}`);
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
 
   const [clickCount, setClickCount] = useState(0);
 
@@ -342,6 +393,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
         const expected = masterService.generateOfflineResponse(machineId, 'DMI_OFFLINE_SECRET_2026');
         if (offlineCode.trim() === expected) {
           await db.activate('8124');
+          localStorage.setItem('dmi_just_activated', 'true');
           onActivated();
           return;
         } else {
@@ -354,6 +406,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
       // 1. Try local master PIN (for developer override)
       const success = await db.activate(cleanPin);
       if (success) {
+        localStorage.setItem('dmi_just_activated', 'true');
         onActivated();
         return;
       }
@@ -369,6 +422,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
         localDb.setActiveBusinessId(businessId);
 
         await db.activate('8124'); // Internal trigger to mark as activated locally
+        localStorage.setItem('dmi_just_activated', 'true');
 
         // Instantly download and sync all business data onto this laptop/device
         try {
@@ -417,9 +471,48 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
           <div className="space-y-2">
             <h1 className="text-2xl font-black text-white tracking-tight uppercase">DMi Technologies</h1>
             <p className="text-slate-400 text-sm font-medium">
-              System Activation Required. Please enter your license key to continue.
+              System Activation Required. Please enter your license key to continue or restore from a backup file.
             </p>
           </div>
+
+          {/* Auto-Backup Status & Import Backup Box */}
+          <div className="w-full p-4 bg-slate-950/90 border border-slate-800 rounded-2xl text-left space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Auto-Backup Status:</span>
+              <span className="text-[10px] font-black uppercase text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded border border-emerald-500/20 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                ACTIVE
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-900">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Target Folder:</span>
+              <span className="font-mono text-[11px] font-bold text-indigo-300">Desktop / DMi Backup</span>
+            </div>
+
+            <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-900">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Last Backup:</span>
+              <span className="font-mono text-[11px] font-bold text-slate-300">12/08/2026, 14:02:49</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isImportingBackup}
+              className="w-full mt-2 py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 group active:scale-95"
+            >
+              <Upload className="w-4 h-4 text-indigo-200 group-hover:scale-110 transition-transform" />
+              <span>Import Backup (.dmidata)</span>
+            </button>
+          </div>
+
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            accept=".dmidata,.json" 
+            onChange={handleImportBackupFile} 
+            className="hidden" 
+          />
 
           <div className="w-full space-y-4">
             <div className="relative">
@@ -832,6 +925,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
                         try {
                           await db.activate('8124');
                           localStorage.setItem('dmi_pos_license_key', generatedKey);
+                          localStorage.setItem('dmi_just_activated', 'true');
                           onActivated();
                         } catch (e) {
                           console.error(e);
@@ -881,6 +975,29 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
                     Alright, close
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Backup Restoration Loading Overlay */}
+      <AnimatePresence>
+        {isImportingBackup && (
+          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-slate-900 w-full max-w-sm rounded-3xl p-6 shadow-2xl border border-indigo-500/30 text-center space-y-4"
+            >
+              <div className="w-14 h-14 bg-indigo-500/10 text-indigo-400 rounded-2xl flex items-center justify-center mx-auto">
+                <Database className="w-7 h-7 animate-bounce" />
+              </div>
+              <h3 className="text-lg font-black text-white uppercase tracking-tight">Restoring System Backup</h3>
+              <p className="text-xs text-slate-400 animate-pulse">{importBackupStatus || 'Processing system records...'}</p>
+              <div className="flex justify-center pt-2">
+                <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
               </div>
             </motion.div>
           </div>
