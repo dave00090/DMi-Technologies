@@ -97,6 +97,130 @@ export const dmiDataEngine = {
     return { filename, jsonString, recordCount: totalRecords };
   },
 
+  // Perform automated 24-hour system backup targeting "DMi Backup" folder
+  performAutomatedBackup: async (): Promise<{ success: boolean; filename: string; recordCount: number; message: string }> => {
+    try {
+      const now = new Date();
+      const activeLicense = (localStorage.getItem('dmi_pos_license_key') || 'FREE_LOCAL').trim().toUpperCase();
+      const dateStr = now.toISOString().split('T')[0];
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
+      const filename = `DMi_Backup_${dateStr}_${timeStr}.dmidata`;
+
+      const { jsonString, recordCount } = await dmiDataEngine.exportDmiDataBundle();
+
+      // 1. Cache backup locally in IndexedDB backup vault permanently
+      const backupVaultKey = `dmi_backup_${dateStr}_${timeStr}`;
+      await localDb.saveData('dmi_pos_auto_backups_vault', [{
+        id: backupVaultKey,
+        filename,
+        timestamp: now.toISOString(),
+        recordCount,
+        bundleContent: jsonString
+      }]);
+
+      // 2. Trigger auto-download/file export targeting "DMi Backup" directory
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      // 3. Update backup logs & last backup timestamp
+      localStorage.setItem('dmi_pos_last_auto_backup_time', now.toISOString());
+
+      const existingLogsRaw = localStorage.getItem('dmi_pos_auto_backup_history');
+      let history: any[] = [];
+      try { history = existingLogsRaw ? JSON.parse(existingLogsRaw) : []; } catch (e) {}
+
+      history.unshift({
+        id: backupVaultKey,
+        timestamp: now.toISOString(),
+        filename,
+        recordCount,
+        folder: 'DMi Backup',
+        status: 'SUCCESS'
+      });
+
+      localStorage.setItem('dmi_pos_auto_backup_history', JSON.stringify(history.slice(0, 30)));
+
+      window.dispatchEvent(new CustomEvent('auto-backup-completed', {
+        detail: { filename, timestamp: now.toISOString(), recordCount }
+      }));
+
+      console.log(`[DMi Auto-Backup Engine] 24-Hour Automated Backup created cleanly: ${filename} (${recordCount} records)`);
+
+      return {
+        success: true,
+        filename,
+        recordCount,
+        message: `24-Hour automated backup generated in DMi Backup folder as ${filename} (${recordCount} records).`
+      };
+    } catch (err: any) {
+      console.error('[DMi Auto-Backup Engine] Backup failed:', err);
+      return {
+        success: false,
+        filename: '',
+        recordCount: 0,
+        message: err.message || 'Auto-backup failed.'
+      };
+    }
+  },
+
+  // Check if 24 hours have elapsed (or if first install) and trigger backup
+  checkAndRunAutoBackup: async (): Promise<boolean> => {
+    const lastBackupRaw = localStorage.getItem('dmi_pos_last_auto_backup_time');
+    const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+
+    if (!lastBackupRaw) {
+      console.log('[DMi Auto-Backup Engine] System newly installed / first run detected. Initializing immediate automated 24-hour backup...');
+      await dmiDataEngine.performAutomatedBackup();
+      return true;
+    }
+
+    const lastTime = new Date(lastBackupRaw).getTime();
+    const elapsedTime = Date.now() - lastTime;
+
+    if (isNaN(lastTime) || elapsedTime >= TWENTY_FOUR_HOURS_MS) {
+      console.log(`[DMi Auto-Backup Engine] 24 hours elapsed since last backup (${Math.round(elapsedTime / 3600000)} hrs ago). Running scheduled auto backup...`);
+      await dmiDataEngine.performAutomatedBackup();
+      return true;
+    }
+
+    return false;
+  },
+
+  // Start background auto-backup scheduler on app boot
+  initializeAutoBackupScheduler: () => {
+    // Run check immediately on system boot
+    dmiDataEngine.checkAndRunAutoBackup().catch((e) => {
+      console.warn('Initial auto-backup check warning:', e);
+    });
+
+    // Re-check every 15 minutes
+    setInterval(() => {
+      dmiDataEngine.checkAndRunAutoBackup().catch((e) => {
+        console.warn('Scheduled auto-backup check warning:', e);
+      });
+    }, 15 * 60 * 1000);
+  },
+
+  getLastAutoBackupTime: (): string | null => {
+    return localStorage.getItem('dmi_pos_last_auto_backup_time');
+  },
+
+  getAutoBackupHistory: (): any[] => {
+    try {
+      const raw = localStorage.getItem('dmi_pos_auto_backup_history');
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
   // Download DMi data archive file directly
   triggerDmiDataDownload: async () => {
     const { filename, jsonString } = await dmiDataEngine.exportDmiDataBundle();

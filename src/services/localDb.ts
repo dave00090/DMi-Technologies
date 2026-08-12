@@ -54,22 +54,63 @@ export function encryptString(text: string): string {
   const active = localStorage.getItem('dmi_pos_encryption_active') !== 'false';
   if (!active) return text;
   
-  const pin = localStorage.getItem('dmi_pos_encryption_pin') || '8124_SECURE_DMI_KEY';
-  let result = '';
-  for (let i = 0; i < text.length; i++) {
-    const charCode = text.charCodeAt(i);
-    const keyChar = pin.charCodeAt(i % pin.length);
-    const encrypted = charCode ^ (keyChar + i);
-    result += String.fromCharCode(encrypted);
+  try {
+    const pin = localStorage.getItem('dmi_pos_encryption_pin') || '8124_SECURE_DMI_KEY';
+    // Cleanly convert UTF-16 text to 8-bit UTF-8 byte string
+    const utf8String = unescape(encodeURIComponent(text));
+    let xorString = '';
+    for (let i = 0; i < utf8String.length; i++) {
+      const byte = utf8String.charCodeAt(i);
+      const keyChar = pin.charCodeAt(i % pin.length);
+      const encryptedByte = (byte ^ keyChar ^ (i % 256));
+      xorString += String.fromCharCode(encryptedByte);
+    }
+    return 'ENC__' + btoa(xorString);
+  } catch (e) {
+    console.warn('Encryption fallback due to encoding error:', e);
+    return text;
   }
-  return 'ENC__' + btoa(unescape(encodeURIComponent(result)));
 }
 
 export function decryptString(cipher: string): string {
   if (!cipher || !cipher.startsWith('ENC__')) return cipher;
+  const pin = localStorage.getItem('dmi_pos_encryption_pin') || '8124_SECURE_DMI_KEY';
+  const cleanCipher = cipher.substring(5);
+
+  const isValidDecrypted = (str: string) => {
+    if (!str) return false;
+    const trimmed = str.trim();
+    if (trimmed.startsWith('[') || trimmed.startsWith('{') || trimmed.startsWith('"') || trimmed === 'true' || trimmed === 'false' || trimmed === 'null' || !isNaN(Number(trimmed))) {
+      try {
+        JSON.parse(trimmed);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+    return false;
+  };
+
+  // 1. Try clean UTF-8 byte XOR decryption
   try {
-    const pin = localStorage.getItem('dmi_pos_encryption_pin') || '8124_SECURE_DMI_KEY';
-    const cleanCipher = cipher.substring(5);
+    const xorString = atob(cleanCipher);
+    let utf8String = '';
+    for (let i = 0; i < xorString.length; i++) {
+      const encryptedByte = xorString.charCodeAt(i);
+      const keyChar = pin.charCodeAt(i % pin.length);
+      const decryptedByte = (encryptedByte ^ keyChar ^ (i % 256));
+      utf8String += String.fromCharCode(decryptedByte);
+    }
+    const decoded = decodeURIComponent(escape(utf8String));
+    if (isValidDecrypted(decoded)) {
+      return decoded;
+    }
+  } catch (e1) {
+    // Continue to legacy fallback
+  }
+
+  // 2. Legacy fallback
+  try {
     const text = decodeURIComponent(escape(atob(cleanCipher)));
     let result = '';
     for (let i = 0; i < text.length; i++) {
@@ -79,8 +120,8 @@ export function decryptString(cipher: string): string {
       result += String.fromCharCode(decrypted);
     }
     return result;
-  } catch (e) {
-    console.error('CRITICAL local decrypt failure. PIN mismatched or database corrupted:', e);
+  } catch (e2) {
+    console.warn('Could not decrypt string cleanly:', e2);
     return '';
   }
 }
@@ -102,11 +143,24 @@ export async function initDb() {
             try {
               val = JSON.parse(decrypted);
             } catch (e) {
-              console.error('Failed parsing decrypted IDB value for:', key);
+              console.warn('Could not parse decrypted IDB JSON for key:', key, '. Resetting corrupted entry.');
+              val = null;
             }
+          } else {
+            val = null;
+          }
+        } else if (typeof val === 'string') {
+          try {
+            val = JSON.parse(val);
+          } catch (e) {
+            // Keep string if plain string
           }
         }
-        dbCache[key] = val;
+        if (val !== null && val !== undefined) {
+          dbCache[key] = val;
+        } else {
+          delete dbCache[key];
+        }
       }
     }
   } catch (e) {
@@ -123,10 +177,12 @@ export async function initDb() {
           if (localData.startsWith('ENC__')) {
             localData = decryptString(localData);
           }
-          try {
-            dbCache[key] = JSON.parse(localData!);
-          } catch (e) {
-            dbCache[key] = null;
+          if (localData) {
+            try {
+              dbCache[key] = JSON.parse(localData);
+            } catch (e) {
+              dbCache[key] = null;
+            }
           }
         }
       }
@@ -143,10 +199,13 @@ window.addEventListener('storage', async (event) => {
         if (typeof val === 'string' && val.startsWith('ENC__')) {
           const decrypted = decryptString(val);
           if (decrypted) {
-            try { val = JSON.parse(decrypted); } catch (e) {}
+            try { val = JSON.parse(decrypted); } catch (e) { val = null; }
+          } else {
+            val = null;
           }
         }
-        dbCache[event.key] = val;
+        if (val !== null && val !== undefined) dbCache[event.key] = val;
+        else delete dbCache[event.key];
       } else if (event.newValue) {
         let rawVal = event.newValue;
         if (rawVal.startsWith('ENC__')) {
@@ -169,15 +228,29 @@ window.addEventListener('storage', async (event) => {
 
 // Helper to get data from localStorage
 export function getLocal<Value>(key: string, defaultValue: Value): Value {
-  if (dbCache[key] !== undefined && dbCache[key] !== null) {
-    return dbCache[key] as Value;
+  const cached = dbCache[key];
+  if (cached !== undefined && cached !== null) {
+    if (Array.isArray(defaultValue) && !Array.isArray(cached)) {
+      return defaultValue;
+    }
+    return cached as Value;
   }
   let data = localStorage.getItem(key);
   if (data === '__idb_ref__') return defaultValue; // Should have been loaded by initDb
   if (data && data.startsWith('ENC__')) {
     data = decryptString(data);
   }
-  return data ? JSON.parse(data) : defaultValue;
+  if (!data) return defaultValue;
+  try {
+    const parsed = JSON.parse(data);
+    if (Array.isArray(defaultValue) && !Array.isArray(parsed)) {
+      return defaultValue;
+    }
+    return parsed as Value;
+  } catch (e) {
+    console.warn('Failed parsing getLocal value for key:', key, e);
+    return defaultValue;
+  }
 }
 
 // Helper to offload large fields (images) to IndexedDB
@@ -224,6 +297,7 @@ export async function setLocal<Value>(key: string, data: Value): Promise<void> {
                          key === 'dmi_pos_license_key' ||
                          key === 'dmi_pos_encryption_pin' ||
                          key === 'dmi_pos_encryption_active' ||
+                         key.startsWith('dmi_pos_auto_backups') ||
                          key.startsWith('pos_cart_');
 
   const shouldEncrypt = !isExcludedKey && key.startsWith('dmi_pos_') && localStorage.getItem('dmi_pos_encryption_active') !== 'false';

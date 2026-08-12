@@ -34,7 +34,8 @@ import {
   XCircle,
   RefreshCw,
   Database,
-  Wrench
+  Wrench,
+  Clock
 } from 'lucide-react';
 import { localDb, removeLocal } from '../services/localDb';
 import { dmiDataEngine } from '../services/dmiDataEngine';
@@ -867,17 +868,65 @@ export const Settings: React.FC<SettingsProps> = ({ user, businessId, shopId, on
           </div>
         </div>
 
-        <div className="bg-slate-50 dark:bg-slate-900/60 border border-border rounded-2xl p-4 mb-6 space-y-2">
+        <div className="bg-slate-100 border border-slate-300 rounded-2xl p-4 mb-6 space-y-2 text-black">
           <div className="flex items-start gap-3">
-            <HardDrive className="w-5 h-5 text-indigo-500 flex-shrink-0 mt-0.5" />
-            <div className="text-xs text-muted leading-relaxed">
-              <p className="font-bold text-ink mb-1">💡 Desktop EXE & Offline Data Preservation:</p>
-              When compiled into a standalone Windows/Desktop <span className="font-bold text-indigo-600">.exe</span>, the system automatically creates and reads from the <span className="font-mono font-bold text-ink">DMi data</span> folder in the application root directory. You can export complete snapshots to this folder or import external <span className="font-mono font-bold text-indigo-600">.dmidata</span> files to instantly restore all business records, sales ledgers, products, variants, and IndexedDB images without faults.
+            <HardDrive className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" />
+            <div className="text-xs text-black leading-relaxed font-medium">
+              <p className="font-bold text-black mb-1">💡 Desktop EXE & Offline Data Preservation:</p>
+              When compiled into a standalone Windows/Desktop <span className="font-bold text-black">.exe</span>, the system automatically creates and reads from the <span className="font-mono font-bold text-black">DMi data</span> folder in the application root directory. You can export complete snapshots to this folder or import external <span className="font-mono font-bold text-black">.dmidata</span> files to instantly restore all business records, sales ledgers, products, variants, and IndexedDB images without faults.
             </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* AUTOMATED 24-HOUR DESKTOP BACKUP ("DMi Backup" FOLDER) */}
+          <div className="p-6 bg-bg border-2 border-indigo-500/30 dark:border-indigo-500/40 rounded-2xl space-y-4 flex flex-col justify-between shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 bg-indigo-600 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-bl-xl">
+              AUTOMATED 24-HR
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold">
+                <Clock className="w-5 h-5" />
+                <h4>24-Hour Auto-Backup ("DMi Backup")</h4>
+              </div>
+              <p className="text-xs text-muted leading-relaxed">
+                Automatically backs up all database records & IndexedDB images to a folder named <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">"DMi Backup"</span> on your Desktop immediately when installed and every 24 hours with date & time stamp.
+              </p>
+              <div className="p-2.5 bg-slate-100 dark:bg-slate-800/80 rounded-xl space-y-1 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-muted font-medium">Auto-Backup Status:</span>
+                  <span className="font-bold text-emerald-600 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> ACTIVE
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-[11px]">
+                  <span className="text-muted">Target Folder:</span>
+                  <span className="font-mono font-bold text-ink">Desktop / DMi Backup</span>
+                </div>
+                <div className="flex justify-between items-center text-[11px]">
+                  <span className="text-muted">Last Backup:</span>
+                  <span className="font-mono text-xs text-indigo-600 font-bold">
+                    {dmiDataEngine.getLastAutoBackupTime() ? new Date(dmiDataEngine.getLastAutoBackupTime()!).toLocaleString() : 'Just initialized on device'}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                const res = await dmiDataEngine.performAutomatedBackup();
+                if (res.success) {
+                  showSuccess(res.message);
+                } else {
+                  alert(`Auto-Backup error: ${res.message}`);
+                }
+              }}
+              className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Run 24-Hour Auto-Backup Now</span>
+            </button>
+          </div>
+
           {/* EXPORT DMI DATA ARCHIVE (DESKTOP BACKUP) */}
           <div className="p-6 bg-bg border border-border rounded-2xl space-y-4 flex flex-col justify-between">
             <div className="space-y-2">

@@ -3,6 +3,30 @@ import axios from 'axios';
 import { supabase } from './masterService';
 import { createClient } from '@supabase/supabase-js';
 
+const syncMemoryStorage = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {}
+};
+
+const cachedSupabaseClients: Record<string, any> = {};
+
+function getOrCreateSupabaseClient(url: string, key: string) {
+  const cacheKey = `${url}_${key}`;
+  if (!cachedSupabaseClients[cacheKey]) {
+    cachedSupabaseClients[cacheKey] = createClient(url, key, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        storageKey: 'dmi_pos_gotrue_sync',
+        storage: syncMemoryStorage
+      }
+    });
+  }
+  return cachedSupabaseClients[cacheKey];
+}
+
 export interface DiagnosticStep {
   name: string;
   status: 'PASS' | 'WARN' | 'FAIL';
@@ -158,6 +182,22 @@ class SyncService {
     this.init();
   }
 
+  private autoSyncDebounceTimer: any = null;
+
+  public triggerImmediateChangeSync() {
+    if (this.autoSyncDebounceTimer) {
+      clearTimeout(this.autoSyncDebounceTimer);
+    }
+    this.autoSyncDebounceTimer = setTimeout(() => {
+      if (!this.isSyncing) {
+        this.addLog('INFO', 'Data change detected. Executing real-time automatic background sync...');
+        this.syncNow(false).catch((e) => {
+          console.warn('Real-time auto-sync warning:', e);
+        });
+      }
+    }, 600);
+  }
+
   private async init() {
     await this.checkConnectivity();
 
@@ -172,12 +212,27 @@ class SyncService {
       this.addLog('INFO', 'Offline terminal mode activated. Transactions will cache locally.');
     });
 
+    // Event-driven real-time auto-sync on any mutation or change
+    const changeEvents = [
+      'local-db-update',
+      'business-update',
+      'shop-changed',
+      'business-changed',
+      'storage-sync'
+    ];
+
+    changeEvents.forEach(evtName => {
+      window.addEventListener(evtName, () => {
+        this.triggerImmediateChangeSync();
+      });
+    });
+
     const cachedStats = getLocal<Partial<SyncStats>>(STORAGE_KEYS.SYNC_STATS, {});
     if (cachedStats.logs) {
       this.syncLogs = cachedStats.logs;
     }
 
-    this.startAutoSync(30000);
+    this.startAutoSync(15000);
   }
 
   private updateOnlineStatus(online: boolean) {
@@ -421,8 +476,10 @@ class SyncService {
     
     for (const tableKey of tables) {
       const all = getLocal<any[]>(tableKey, []);
-      const unsynced = all.filter(item => item && item.synced === false);
-      count += unsynced.length;
+      if (Array.isArray(all)) {
+        const unsynced = all.filter(item => item && item.synced === false);
+        count += unsynced.length;
+      }
     }
     return count;
   }
@@ -447,6 +504,7 @@ class SyncService {
     let totalMarked = 0;
     for (const tableKey of tableKeys) {
       const allItems = getLocal<any[]>(tableKey, []);
+      if (!Array.isArray(allItems)) continue;
       let tableChanged = false;
       const updated = allItems.map(item => {
         if (item && item.synced === false) {
@@ -475,9 +533,14 @@ class SyncService {
       const wasOnline = this.isOnlineState;
       const online = await this.checkConnectivity();
       
-      if (online && !wasOnline && !this.isSyncing) {
-        this.addLog('INFO', 'Active internet connection recovered! Auto-syncing database immediately...');
-        this.syncNow(false);
+      if (online && !this.isSyncing) {
+        if (!wasOnline) {
+          this.addLog('INFO', 'Active internet connection recovered! Auto-syncing database immediately...');
+          this.syncNow(false);
+        } else if (this.getPendingCount() > 0) {
+          this.addLog('INFO', `Auto-sync timer: ${this.getPendingCount()} pending change(s) found. Auto-syncing now...`);
+          this.syncNow(false);
+        }
       }
     }, intervalMs);
   }
@@ -550,7 +613,8 @@ class SyncService {
       };
 
       for (const t of tables) {
-        const allItems = getLocal<any[]>(t.key, []);
+        const rawItems = getLocal<any[]>(t.key, []);
+        const allItems = Array.isArray(rawItems) ? rawItems : [];
         const unsyncedItems = allItems.filter(item => item && item.synced === false);
         pushChanges[t.name] = await resolveIdbImagesInObject(unsyncedItems);
         fullSnapshot[t.name] = await resolveIdbImagesInObject(allItems);
@@ -568,16 +632,9 @@ class SyncService {
       let activeSupabase = supabase;
       if (customUrl && customUrl.includes('.supabase.co')) {
         const cleanUrl = customUrl.replace(/\/+$/, '').replace(/\/rest\/v1\/?$/, '');
-        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('dmi_pos_supabase_anon_key') || '';
         if (anonKey) {
-          activeSupabase = createClient(cleanUrl, anonKey, {
-            auth: {
-              persistSession: false,
-              autoRefreshToken: false,
-              detectSessionInUrl: false,
-              storageKey: 'dmi_pos_gotrue_sync'
-            }
-          });
+          activeSupabase = getOrCreateSupabaseClient(cleanUrl, anonKey);
         }
       }
 

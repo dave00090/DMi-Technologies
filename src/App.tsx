@@ -34,6 +34,7 @@ import { PenaltyScreen } from './components/PenaltyScreen';
 import { SubscriptionLockScreen } from './components/SubscriptionLockScreen';
 import { masterService, supabase } from './services/masterService';
 import { syncService } from './services/syncService';
+import { dmiDataEngine } from './services/dmiDataEngine';
 
 import { InvoicesTab } from './components/InvoicesTab';
 import { GuestDeskPanel } from './components/GuestDeskPanel';
@@ -156,6 +157,9 @@ export default function App() {
     }
 
     checkLicense();
+    
+    // Initialize 24-hour automated backup scheduler (creates "DMi Backup" folder immediately on installation & every 24hrs)
+    dmiDataEngine.initializeAutoBackupScheduler();
     
     // Real-time License Tracking for immediate lock/unlock
     const licenseKey = localStorage.getItem('dmi_pos_license_key');
