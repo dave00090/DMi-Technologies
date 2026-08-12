@@ -30,7 +30,8 @@ import {
   History,
   AlertCircle,
   Clock,
-  ExternalLink
+  ExternalLink,
+  Sparkles
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Receipt } from './Receipt';
@@ -38,6 +39,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { BarcodeScanner } from './BarcodeScanner';
 import { useHardwareScanner } from '../hooks/useHardwareScanner';
 import { PaymentMethod } from '../types';
+import { lookupBarcodeDetails, BarcodeProductInfo } from '../services/barcodeLookup';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { SafeImage } from './SafeImage';
 import { printElement } from '../lib/printUtils';
@@ -95,6 +97,8 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
   const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(null);
   const [isStkLoading, setIsStkLoading] = useState(false);
   const [selectedMpesaMethod, setSelectedMpesaMethod] = useState<'SEND_MONEY' | 'POCHI' | 'PAYBILL' | 'TILL' | null>(null);
+  const [scannedLookupInfo, setScannedLookupInfo] = useState<BarcodeProductInfo | null>(null);
+  const [isPosLookupLoading, setIsPosLookupLoading] = useState(false);
 
   // Poll for M-Pesa transaction status
   useEffect(() => {
@@ -302,22 +306,81 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
     }
   }, [businessProfile]);
 
+  const handleAutoAddLookupToPOSCart = async (info: BarcodeProductInfo) => {
+    try {
+      const newVariantId = crypto.randomUUID();
+      const newProduct: Product = {
+        id: crypto.randomUUID(),
+        businessId,
+        shopId,
+        name: info.name || `Scanned Item (${info.barcode})`,
+        category: info.category || 'General',
+        buyingPrice: 0,
+        sellingPrice: 100,
+        basePrice: 100,
+        lowStockThreshold: 5,
+        variants: [
+          {
+            id: newVariantId,
+            size: 'Standard',
+            color: 'Default',
+            stock: 100,
+            sku: info.barcode
+          }
+        ],
+        description: info.description || `Added via barcode-list.com lookup`,
+        imageUrl: info.imageUrl || '',
+        type: 'PRODUCT',
+        brand: info.brand || ''
+      };
+
+      await db.addProduct(newProduct);
+      const updatedProducts = await db.getProducts(businessId, shopId);
+      setProducts(updatedProducts);
+
+      const added = updatedProducts.find(p => p.id === newProduct.id) || newProduct;
+      addToCart(added, added.variants[0]);
+      setScannedLookupInfo(null);
+      setSuccess(`Auto-added "${added.name}" to inventory & cart!`);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(`Failed to auto-add product: ${err.message}`);
+    }
+  };
+
   const handleBarcodeScan = (barcode: string) => {
-    const product = products.find(p => p.variants.some(v => v.sku === barcode));
+    const cleanBar = barcode.trim();
+    const product = products.find(p => p.variants.some(v => v.sku === cleanBar));
     if (product) {
-      const variant = product.variants.find(v => v.sku === barcode);
+      const variant = product.variants.find(v => v.sku === cleanBar);
       if (variant) {
         addToCart(product, variant);
-        setSearchTerm(''); // Clear search if a scan happens
+        setSearchTerm('');
         setSuccess(`Added to cart: ${product.name}`);
         setTimeout(() => setSuccess(null), 2000);
-        
-        // Optional: play scan sound if we had an asset, for now just visual feedback
       }
     } else {
-      // If we are in POS and a scan happens but no product found
-      setError(`No product found for barcode: ${barcode}`);
-      setTimeout(() => setError(null), 3000);
+      setScannedLookupInfo(null);
+      setIsPosLookupLoading(true);
+      
+      lookupBarcodeDetails(cleanBar)
+        .then((info) => {
+          if (info.found) {
+            setScannedLookupInfo(info);
+            setSuccess(`Product found on barcode-list.com: "${info.name}"`);
+            setTimeout(() => setSuccess(null), 4000);
+          } else {
+            setError(`No product found for barcode: ${cleanBar}`);
+            setTimeout(() => setError(null), 3000);
+          }
+        })
+        .catch(() => {
+          setError(`No product found for barcode: ${cleanBar}`);
+          setTimeout(() => setError(null), 3000);
+        })
+        .finally(() => {
+          setIsPosLookupLoading(false);
+        });
     }
   };
 
@@ -810,6 +873,48 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
                 </button>
               )}
             </div>
+
+            {/* Scanned Barcode Found Banner (barcode-list.com integration) */}
+            <AnimatePresence>
+              {scannedLookupInfo && (
+                <motion.div
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-3.5 rounded-xl border border-indigo-500/40 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-emerald-500/20 text-emerald-300 rounded-lg shrink-0">
+                      <Sparkles className="w-5 h-5 text-amber-300 fill-amber-300" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black text-white flex items-center gap-1.5">
+                        <span>Matched on barcode-list.com:</span>
+                        <span className="text-indigo-200 underline">{scannedLookupInfo.name}</span>
+                      </p>
+                      <p className="text-[11px] text-slate-300 mt-0.5">
+                        Barcode: <span className="font-mono font-bold">{scannedLookupInfo.barcode}</span> {scannedLookupInfo.brand ? `• Brand: ${scannedLookupInfo.brand}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                    <button
+                      onClick={() => handleAutoAddLookupToPOSCart(scannedLookupInfo)}
+                      className="px-3.5 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-extrabold text-xs uppercase rounded-lg shadow-md transition-all cursor-pointer whitespace-nowrap active:scale-95 flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Auto-Add & Sell Now</span>
+                    </button>
+                    <button
+                      onClick={() => setScannedLookupInfo(null)}
+                      className="p-1.5 hover:bg-white/10 text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Category Filter Tabs */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none pt-1">

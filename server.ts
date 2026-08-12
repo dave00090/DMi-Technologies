@@ -230,6 +230,126 @@ async function startServer() {
     });
   });
 
+  // --- Universal Barcode Lookup API (queries barcode-list.com & OpenFoodFacts) ---
+  app.get('/api/barcode/lookup', async (req, res) => {
+    const rawBarcode = (req.query.barcode as string || '').trim();
+    if (!rawBarcode) {
+      return res.status(400).json({ error: 'Missing barcode parameter' });
+    }
+
+    const cleanBarcode = rawBarcode.replace(/[^0-9A-Za-z]/g, '');
+    let name = '';
+    let brand = '';
+    let category = 'General';
+    let description = '';
+    let imageUrl = '';
+    let source = '';
+    let matchesList: string[] = [];
+
+    // 1. Query barcode-list.com
+    try {
+      const barcodeListUrl = `https://barcode-list.com/barcode/EN/Search.htm?barcode=${cleanBarcode}`;
+      const blRes = await axios.get(barcodeListUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9'
+        },
+        timeout: 6000,
+        validateStatus: (status) => status < 500
+      });
+
+      if (blRes.status === 200) {
+        const html = blRes.data || '';
+        const metaMatch = html.match(/<meta name="description" content="(.*?)"/i);
+        const titleMatch = html.match(/<title>(.*?)<\/title>/i);
+
+        if (titleMatch && !titleMatch[1].toLowerCase().includes('database of barcodes')) {
+          const rawTitle = titleMatch[1].replace(/-\s*Barcode:.*$/i, '').trim();
+          if (rawTitle && !rawTitle.toLowerCase().startsWith('search')) {
+            name = rawTitle;
+            source = 'barcode-list.com';
+          }
+        }
+
+        if (metaMatch && metaMatch[1]) {
+          const metaContent = metaMatch[1];
+          const meetMatch = metaContent.match(/following products:\s*(.*)/i);
+          if (meetMatch && meetMatch[1]) {
+            matchesList = meetMatch[1].split(';').map((s: string) => s.trim()).filter(Boolean);
+            description = `Matched products on barcode-list.com:\n- ` + matchesList.slice(0, 8).join('\n- ');
+          }
+        }
+      }
+    } catch (err: any) {
+      // Ignore routine network timeouts/errors
+    }
+
+    // 2. Query Open Food Facts for enrichment (images, brands, categories)
+    try {
+      const offRes = await axios.get(`https://world.openfoodfacts.org/api/v2/product/${cleanBarcode}.json`, {
+        headers: { 'User-Agent': 'DMiTechnologiesPOS/1.0 (migichidave09@gmail.com)' },
+        timeout: 4000,
+        validateStatus: (status) => status < 500
+      });
+
+      if (offRes.status === 200 && offRes.data && offRes.data.status === 1 && offRes.data.product) {
+        const p = offRes.data.product;
+        if (!name) {
+          name = p.product_name || p.generic_name || p.product_name_en || '';
+          if (name) source = 'openfoodfacts';
+        }
+        if (p.brands || p.brand_owner) {
+          brand = p.brands || p.brand_owner || '';
+        }
+        if (p.image_front_url || p.image_url) {
+          imageUrl = p.image_front_url || p.image_url;
+        }
+        if (p.categories) {
+          const offCategories = p.categories.split(',').map((c: string) => c.trim()).slice(0, 4).join(', ');
+          description += (description ? '\n\n' : '') + `Categories: ${offCategories}`;
+        }
+      }
+    } catch (err: any) {
+      // Ignore routine 404s / network timeouts when product is not in database
+    }
+
+    // Auto-categorize based on title/brand/description keywords
+    const fullText = `${name} ${brand} ${description}`.toLowerCase();
+    if (fullText.includes('coke') || fullText.includes('cola') || fullText.includes('soda') || fullText.includes('water') || fullText.includes('juice') || fullText.includes('drink') || fullText.includes('can') || fullText.includes('beverage') || fullText.includes('pepsi') || fullText.includes('coffee') || fullText.includes('tea')) {
+      category = 'Beverages';
+    } else if (fullText.includes('nutella') || fullText.includes('chocolate') || fullText.includes('snickers') || fullText.includes('candy') || fullText.includes('biscuit') || fullText.includes('cookie') || fullText.includes('chip') || fullText.includes('wafer') || fullText.includes('sweet') || fullText.includes('snack')) {
+      category = 'Confectionery & Snacks';
+    } else if (fullText.includes('soap') || fullText.includes('shampoo') || fullText.includes('cream') || fullText.includes('lotion') || fullText.includes('toothpaste') || fullText.includes('perfume') || fullText.includes('detergent')) {
+      category = 'Health & Beauty';
+    } else if (fullText.includes('milk') || fullText.includes('butter') || fullText.includes('cheese') || fullText.includes('yogurt') || fullText.includes('dairy')) {
+      category = 'Dairy & Eggs';
+    } else if (fullText.includes('bread') || fullText.includes('rice') || fullText.includes('flour') || fullText.includes('sugar') || fullText.includes('oil') || fullText.includes('pasta') || fullText.includes('sauce') || fullText.includes('grocer')) {
+      category = 'Groceries';
+    } else if (fullText.includes('cable') || fullText.includes('phone') || fullText.includes('battery') || fullText.includes('charger') || fullText.includes('electronic')) {
+      category = 'Electronics';
+    }
+
+    if (name) {
+      return res.json({
+        found: true,
+        barcode: cleanBarcode,
+        name: name,
+        brand: brand,
+        category: category,
+        description: description,
+        imageUrl: imageUrl,
+        matchesList: matchesList,
+        source: source || 'barcode-list.com'
+      });
+    }
+
+    return res.json({
+      found: false,
+      barcode: cleanBarcode,
+      message: 'Product not found on barcode-list.com or public barcode databases'
+    });
+  });
+
   // --- Real-time Guest Requests API (Supports Cross-Device Syncing) ---
   app.get('/api/guest-requests', (req, res) => {
     const { businessId, shopId } = req.query;

@@ -257,6 +257,8 @@ export interface UserProfile {
   role: Role;
   lastLogin?: string;
   theme?: ThemeConfig;
+  nationalId?: string;
+  password?: string;
 }
 
 export interface Customer {

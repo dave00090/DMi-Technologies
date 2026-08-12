@@ -35,7 +35,13 @@ import {
   RefreshCw,
   Database,
   Wrench,
-  Clock
+  Clock,
+  Eye,
+  EyeOff,
+  Lock,
+  KeyRound,
+  UserCheck,
+  Shield
 } from 'lucide-react';
 import { localDb, removeLocal } from '../services/localDb';
 import { dmiDataEngine } from '../services/dmiDataEngine';
@@ -84,6 +90,47 @@ export const Settings: React.FC<SettingsProps> = ({ user, businessId, shopId, on
   const [auditReport, setAuditReport] = useState<IntegrityReport | null>(null);
   const [showAuditModal, setShowAuditModal] = useState(false);
   const activeShop = localDb.getShopById(shopId);
+
+  // Account & ID Security State
+  const [nationalIdInput, setNationalIdInput] = useState(user.nationalId || '');
+  const [newPassInput, setNewPassInput] = useState('');
+  const [confirmPassInput, setConfirmPassInput] = useState('');
+  const [showPassInSettings, setShowPassInSettings] = useState(false);
+  const [accountSuccessMsg, setAccountSuccessMsg] = useState<string | null>(null);
+  const [accountErrorMsg, setAccountErrorMsg] = useState<string | null>(null);
+
+  const handleSaveAccountSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAccountErrorMsg(null);
+    setAccountSuccessMsg(null);
+
+    try {
+      if (!nationalIdInput.trim()) {
+        setAccountErrorMsg('Please enter your National ID / ID Number.');
+        return;
+      }
+
+      const updates: Partial<UserProfile> = {
+        nationalId: nationalIdInput.trim()
+      };
+
+      if (newPassInput) {
+        if (newPassInput !== confirmPassInput) {
+          setAccountErrorMsg('New passwords do not match.');
+          return;
+        }
+        updates.password = newPassInput;
+      }
+
+      await localAuth.updateUser(user.uid, updates);
+      setAccountSuccessMsg('Account & ID Security settings updated successfully!');
+      setNewPassInput('');
+      setConfirmPassInput('');
+      showSuccess('Account & ID Security settings saved!');
+    } catch (err: any) {
+      setAccountErrorMsg(err.message || 'Failed to update account settings.');
+    }
+  };
 
   const handleRunAudit = async () => {
     setRunningAudit(true);
@@ -187,6 +234,121 @@ export const Settings: React.FC<SettingsProps> = ({ user, businessId, shopId, on
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* USER ACCOUNT & ID SECURITY CARD */}
+      <div className="bg-card border border-border rounded-3xl p-8 shadow-sm relative overflow-hidden">
+        <div className="flex items-center gap-4 mb-6">
+          <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl text-indigo-600 dark:text-indigo-400">
+            <UserCheck className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-ink">User Account & ID Security</h2>
+            <p className="text-muted text-sm">Manage your National ID number for password recovery and account security</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveAccountSettings} className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-muted/20 p-4 rounded-2xl border border-border/50 text-xs">
+            <div>
+              <span className="text-muted block font-bold uppercase text-[10px]">Logged In User</span>
+              <span className="font-bold text-ink text-sm">{user.name}</span>
+            </div>
+            <div>
+              <span className="text-muted block font-bold uppercase text-[10px]">Username</span>
+              <span className="font-bold text-indigo-600 dark:text-indigo-400 text-sm">@{user.username}</span>
+            </div>
+            <div>
+              <span className="text-muted block font-bold uppercase text-[10px]">Role</span>
+              <span className="font-bold text-emerald-600 uppercase text-sm">{user.role}</span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-bold text-ink opacity-90">
+              National ID / ID Number <span className="text-rose-500">*</span>
+            </label>
+            <div className="relative">
+              <Shield className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
+              <input
+                type="text"
+                required
+                value={nationalIdInput}
+                onChange={(e) => setNationalIdInput(e.target.value)}
+                placeholder="e.g. 32890123 or ID-8871"
+                className="w-full pl-12 pr-4 py-3 bg-muted/10 border border-border rounded-xl text-ink focus:ring-2 focus:ring-indigo-500 outline-none font-bold"
+              />
+            </div>
+            <p className="text-xs text-muted leading-relaxed">
+              💡 <strong>Password Recovery:</strong> If you ever forget your password on the login screen, entering this exact ID Number will allow you to safely reset your password.
+            </p>
+          </div>
+
+          <div className="pt-4 border-t border-border/60 space-y-4">
+            <h3 className="text-sm font-bold text-ink flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-indigo-600" />
+              <span>Change Password (Optional)</span>
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-muted uppercase mb-1">New Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-muted w-4 h-4" />
+                  <input
+                    type={showPassInSettings ? 'text' : 'password'}
+                    value={newPassInput}
+                    onChange={(e) => setNewPassInput(e.target.value)}
+                    placeholder="Enter new password"
+                    className="w-full pl-10 pr-10 py-2.5 bg-muted/10 border border-border rounded-xl text-ink text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassInSettings(!showPassInSettings)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-ink p-1 rounded-md transition-colors"
+                  >
+                    {showPassInSettings ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-muted uppercase mb-1">Confirm New Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-muted w-4 h-4" />
+                  <input
+                    type={showPassInSettings ? 'text' : 'password'}
+                    value={confirmPassInput}
+                    onChange={(e) => setConfirmPassInput(e.target.value)}
+                    placeholder="Confirm new password"
+                    className="w-full pl-10 pr-10 py-2.5 bg-muted/10 border border-border rounded-xl text-ink text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {accountErrorMsg && (
+            <p className="text-xs text-rose-500 font-bold bg-rose-50 dark:bg-rose-950/40 p-3 rounded-xl border border-rose-200 dark:border-rose-800">
+              {accountErrorMsg}
+            </p>
+          )}
+
+          {accountSuccessMsg && (
+            <p className="text-xs text-emerald-600 font-bold bg-emerald-50 dark:bg-emerald-950/40 p-3 rounded-xl border border-emerald-200 dark:border-emerald-800 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{accountSuccessMsg}</span>
+            </p>
+          )}
+
+          <button
+            type="submit"
+            className="py-3 px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer active:scale-98"
+          >
+            <Shield className="w-4 h-4" />
+            <span>Save Account & Security Settings</span>
+          </button>
+        </form>
+      </div>
 
       <div className="bg-card border border-border rounded-3xl p-8 shadow-sm">
         <div className="flex items-center gap-8 mb-12">

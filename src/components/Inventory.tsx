@@ -37,6 +37,9 @@ import { useHardwareScanner } from '../hooks/useHardwareScanner';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { compressImage } from '../lib/imageUtils';
 import { SafeImage } from './SafeImage';
+import { generateEAN13Barcode, generateCode128Barcode } from '../lib/barcodeUtils';
+import { Barcode, ExternalLink, Globe, Loader2, Sparkles } from 'lucide-react';
+import { lookupBarcodeDetails, BarcodeProductInfo } from '../services/barcodeLookup';
 
 interface InventoryProps {
   user: UserProfile;
@@ -61,6 +64,64 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
+  const [unmatchedScannedBarcode, setUnmatchedScannedBarcode] = useState<string | null>(null);
+  const [scannedProductInfo, setScannedProductInfo] = useState<BarcodeProductInfo | null>(null);
+  const [isLookupLoading, setIsLookupLoading] = useState(false);
+
+  const handleAddNewProductWithBarcode = (barcode: string, info?: BarcodeProductInfo | null) => {
+    setEditingProduct(null);
+    const newVariantId = crypto.randomUUID();
+    const productInfo = info || (scannedProductInfo?.barcode === barcode ? scannedProductInfo : null);
+
+    const productName = productInfo?.name || '';
+    const productBrand = productInfo?.brand || '';
+    const productCategory = productInfo?.category && categories.includes(productInfo.category) 
+      ? productInfo.category 
+      : (productInfo?.category || categories[0] || 'General');
+    const productDesc = productInfo?.description || (productInfo?.found ? `Product fetched via barcode-list.com repository (Barcode: ${barcode})` : '');
+    const productImg = productInfo?.imageUrl || '';
+
+    setFormData({
+      businessId,
+      shopId,
+      name: productName,
+      category: productCategory,
+      buyingPrice: 0,
+      sellingPrice: 0,
+      basePrice: 0,
+      lowStockThreshold: 5,
+      variants: [
+        {
+          id: newVariantId,
+          size: 'Standard',
+          color: 'Default',
+          stock: 1,
+          sku: barcode
+        }
+      ],
+      description: productDesc,
+      imageUrl: productImg,
+      type: 'PRODUCT',
+      expiryDate: '',
+      batchNumber: '',
+      partNumber: '',
+      modelCompatibility: '',
+      alcoholPercentage: 0,
+      volume: '',
+      brand: productBrand,
+      warranty: '',
+      unit: 'pcs',
+      isService: false,
+      duration: 0,
+      roomType: '',
+      fuelType: '',
+      material: '',
+      ingredients: []
+    });
+    setUnmatchedScannedBarcode(null);
+    setScannedProductInfo(null);
+    setIsModalOpen(true);
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -201,6 +262,20 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
         setIsModalOpen(true);
       } else {
         setSearchTerm(barcode);
+        setUnmatchedScannedBarcode(barcode);
+        setScannedProductInfo(null);
+        setIsLookupLoading(true);
+
+        lookupBarcodeDetails(barcode)
+          .then((info) => {
+            setScannedProductInfo(info);
+          })
+          .catch((err) => {
+            console.warn('Barcode lookup error:', err);
+          })
+          .finally(() => {
+            setIsLookupLoading(false);
+          });
       }
     }
   };
@@ -775,17 +850,26 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                 handleBarcodeScan(searchTerm);
               }
             }}
-            className="w-full pl-12 pr-4 py-3.5 bg-card border border-border rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium shadow-sm transition-all"
+            className="w-full pl-12 pr-4 py-3.5 bg-card border border-border rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium shadow-sm transition-all text-sm"
           />
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <button 
+            onClick={() => setIsScannerOpen(true)}
+            className="flex items-center gap-2 px-4 py-3 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-bold rounded-2xl transition-all shadow-sm cursor-pointer border border-indigo-200 dark:border-indigo-800"
+            title="Scan Universal Barcode using Camera or Gun"
+          >
+            <Camera className="w-4 h-4" />
+            <span className="text-xs sm:text-sm">Scan Barcode</span>
+          </button>
+
           <button 
             onClick={handleDownloadCSV}
-            className="flex items-center gap-2 px-6 py-3 bg-card border border-border hover:bg-muted text-ink font-bold rounded-2xl transition-all shadow-sm"
+            className="flex items-center gap-2 px-4 sm:px-6 py-3 bg-card border border-border hover:bg-muted text-ink font-bold rounded-2xl transition-all shadow-sm cursor-pointer"
           >
             <Download className="w-4 h-4" />
-            Export
+            <span className="hidden sm:inline">Export</span>
           </button>
           
           <div className="flex bg-card p-1 border border-border rounded-2xl shadow-sm">
@@ -874,6 +958,89 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
           </div>
         </div>
       </div>
+
+      {/* Unmatched Scanned Barcode Prompt Banner with barcode-list.com Lookup Integration */}
+      <AnimatePresence>
+        {unmatchedScannedBarcode && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 rounded-2xl shadow-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border border-indigo-500/40"
+          >
+            <div className="flex items-start gap-3.5 flex-1">
+              <div className="p-3 bg-indigo-500/20 border border-indigo-400/30 rounded-2xl shrink-0 mt-0.5">
+                {isLookupLoading ? (
+                  <Loader2 className="w-6 h-6 text-indigo-300 animate-spin" />
+                ) : (
+                  <Barcode className="w-6 h-6 text-indigo-300" />
+                )}
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-mono bg-indigo-500/30 border border-indigo-400/30 px-2.5 py-0.5 rounded-lg text-xs font-bold tracking-wider text-indigo-200">
+                    {unmatchedScannedBarcode}
+                  </span>
+                  
+                  {isLookupLoading ? (
+                    <span className="text-xs text-indigo-300 flex items-center gap-1 font-medium">
+                      <Loader2 className="w-3 h-3 animate-spin" /> Querying barcode-list.com catalog...
+                    </span>
+                  ) : scannedProductInfo?.found ? (
+                    <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1">
+                      <Globe className="w-3.5 h-3.5" /> Matched on {scannedProductInfo.source || 'barcode-list.com'}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-400 font-medium">Item not in local inventory</span>
+                  )}
+                </div>
+
+                {scannedProductInfo?.found ? (
+                  <div>
+                    <h4 className="text-base font-extrabold text-white flex items-center gap-2 mt-1">
+                      <span>{scannedProductInfo.name}</span>
+                      {scannedProductInfo.brand && (
+                        <span className="text-xs font-semibold px-2.5 py-0.5 bg-white/10 rounded-full text-indigo-200 border border-white/10">
+                          {scannedProductInfo.brand}
+                        </span>
+                      )}
+                    </h4>
+                    {scannedProductInfo.description && (
+                      <p className="text-xs text-slate-300 line-clamp-2 mt-0.5 max-w-2xl">
+                        {scannedProductInfo.description.split('\n')[0]}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-300 mt-1">
+                    Barcode scanned! Tap button to add a new product pre-filled with barcode <span className="font-mono font-bold text-indigo-200">{unmatchedScannedBarcode}</span>.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 w-full md:w-auto justify-end shrink-0">
+              <button
+                onClick={() => handleAddNewProductWithBarcode(unmatchedScannedBarcode, scannedProductInfo)}
+                className="w-full md:w-auto px-5 py-3 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-lg transition-all cursor-pointer whitespace-nowrap active:scale-95 flex items-center justify-center gap-2"
+              >
+                <Sparkles className="w-4 h-4 text-amber-300 fill-amber-300" />
+                <span>{scannedProductInfo?.found ? `Auto-Add "${scannedProductInfo.name}"` : '+ Add Item with Barcode'}</span>
+              </button>
+              <button
+                onClick={() => {
+                  setUnmatchedScannedBarcode(null);
+                  setScannedProductInfo(null);
+                }}
+                className="p-2.5 hover:bg-white/10 text-slate-400 hover:text-white rounded-xl transition-colors cursor-pointer"
+                title="Dismiss"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Category Filters */}
       <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-hide print:hidden">
@@ -1855,13 +2022,14 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const randomSku = Math.random().toString(36).substring(2, 10).toUpperCase();
-                                  updateVariant(variant.id, 'sku', randomSku);
+                                  const eanBarcode = generateEAN13Barcode();
+                                  updateVariant(variant.id, 'sku', eanBarcode);
                                 }}
-                                className="px-4 py-2 bg-muted hover:bg-border text-ink rounded-xl text-xs font-bold transition-all flex items-center gap-2"
+                                className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:hover:bg-indigo-900 dark:text-indigo-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+                                title="Generate Universal EAN-13 Barcode"
                               >
-                                <Zap className="w-3 h-3" />
-                                Generate
+                                <Barcode className="w-3.5 h-3.5 text-indigo-600" />
+                                <span>Generate EAN-13</span>
                               </button>
                             )}
                           </div>
