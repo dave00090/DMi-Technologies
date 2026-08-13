@@ -37,7 +37,7 @@ import { useHardwareScanner } from '../hooks/useHardwareScanner';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { compressImage } from '../lib/imageUtils';
 import { SafeImage } from './SafeImage';
-import { generateEAN13Barcode, generateCode128Barcode } from '../lib/barcodeUtils';
+import { generateEAN13Barcode, generateCode128Barcode, playScanBeep } from '../lib/barcodeUtils';
 import { Barcode, ExternalLink, Globe, Loader2, Sparkles } from 'lucide-react';
 import { lookupBarcodeDetails, BarcodeProductInfo } from '../services/barcodeLookup';
 
@@ -205,14 +205,18 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
     }
   };
   const handleBarcodeScan = (barcode: string) => {
+    const cleanBar = barcode.trim();
+    if (!cleanBar) return;
+    playScanBeep();
+
     if (isModalOpen) {
       if (scanningForVariantId) {
-        updateVariant(scanningForVariantId, 'sku', barcode);
+        updateVariant(scanningForVariantId, 'sku', cleanBar);
         setScanningForVariantId(null);
         setIsScannerOpen(false);
       } else if (formData.variants.length > 0) {
         const lastVariant = formData.variants[formData.variants.length - 1];
-        updateVariant(lastVariant.id, 'sku', barcode);
+        updateVariant(lastVariant.id, 'sku', cleanBar);
         setIsScannerOpen(false);
       } else {
         const newId = crypto.randomUUID();
@@ -221,13 +225,14 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
           size: '',
           color: '',
           stock: 0,
-          sku: barcode
+          sku: cleanBar
         };
         setFormData(prev => ({ ...prev, variants: [newVariant] }));
         setIsScannerOpen(false);
       }
     } else {
-      const product = products.find(p => p.variants.some(v => v.sku === barcode));
+      const searchKey = cleanBar.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const product = products.find(p => p.variants.some(v => (v.sku || '').toLowerCase().replace(/[^a-z0-9]/g, '') === searchKey));
       if (product) {
         setEditingProduct(product);
         setFormData({
@@ -261,12 +266,12 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
         });
         setIsModalOpen(true);
       } else {
-        setSearchTerm(barcode);
-        setUnmatchedScannedBarcode(barcode);
+        setSearchTerm(cleanBar);
+        setUnmatchedScannedBarcode(cleanBar);
         setScannedProductInfo(null);
         setIsLookupLoading(true);
 
-        lookupBarcodeDetails(barcode)
+        lookupBarcodeDetails(cleanBar)
           .then((info) => {
             setScannedProductInfo(info);
           })
@@ -471,12 +476,22 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
       return;
     }
 
+    // Auto-generate barcode SKU for any variant that does not have one
+    const updatedVariants = formData.variants.map(v => {
+      if (!v.sku || !v.sku.trim()) {
+        return { ...v, sku: generateEAN13Barcode() };
+      }
+      return v;
+    });
+
+    const finalFormData = { ...formData, variants: updatedVariants };
+
     try {
       if (editingProduct) {
-        await db.updateProduct(editingProduct.id, formData);
+        await db.updateProduct(editingProduct.id, finalFormData);
         showSuccess('Product updated successfully!');
       } else {
-        await db.addProduct({ ...formData, businessId, shopId });
+        await db.addProduct({ ...finalFormData, businessId, shopId });
         showSuccess('Product added successfully!');
       }
       const freshProducts = await db.getProducts(businessId, shopId);
@@ -2018,20 +2033,32 @@ export const Inventory: React.FC<InventoryProps> = ({ user, businessId, shopId }
                                 <Camera className="w-4 h-4" />
                               </button>
                             </div>
-                            {!variant.sku && (
+                            <div className="flex gap-1.5 shrink-0">
                               <button
                                 type="button"
                                 onClick={() => {
                                   const eanBarcode = generateEAN13Barcode();
                                   updateVariant(variant.id, 'sku', eanBarcode);
                                 }}
-                                className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:hover:bg-indigo-900 dark:text-indigo-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+                                className="px-2.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                                 title="Generate Universal EAN-13 Barcode"
                               >
-                                <Barcode className="w-3.5 h-3.5 text-indigo-600" />
-                                <span>Generate EAN-13</span>
+                                <Barcode className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                <span>{variant.sku ? 'Re-Gen EAN-13' : 'EAN-13'}</span>
                               </button>
-                            )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const code128 = generateCode128Barcode(formData.name.slice(0, 3).toUpperCase() || 'SKU');
+                                  updateVariant(variant.id, 'sku', code128);
+                                }}
+                                className="px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                title="Generate CODE-128 Barcode"
+                              >
+                                <Hash className="w-3.5 h-3.5 text-slate-500" />
+                                <span>CODE-128</span>
+                              </button>
+                            </div>
                           </div>
                         </div>
                       )}

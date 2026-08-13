@@ -31,7 +31,12 @@ import {
   AlertCircle,
   Clock,
   ExternalLink,
-  Sparkles
+  Sparkles,
+  Barcode,
+  Hash,
+  Info,
+  ShieldCheck,
+  Layers
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Receipt } from './Receipt';
@@ -40,6 +45,7 @@ import { BarcodeScanner } from './BarcodeScanner';
 import { useHardwareScanner } from '../hooks/useHardwareScanner';
 import { PaymentMethod } from '../types';
 import { lookupBarcodeDetails, BarcodeProductInfo } from '../services/barcodeLookup';
+import { playScanBeep } from '../lib/barcodeUtils';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { SafeImage } from './SafeImage';
 import { printElement } from '../lib/printUtils';
@@ -99,6 +105,11 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
   const [selectedMpesaMethod, setSelectedMpesaMethod] = useState<'SEND_MONEY' | 'POCHI' | 'PAYBILL' | 'TILL' | null>(null);
   const [scannedLookupInfo, setScannedLookupInfo] = useState<BarcodeProductInfo | null>(null);
   const [isPosLookupLoading, setIsPosLookupLoading] = useState(false);
+  const [scannedProductDetail, setScannedProductDetail] = useState<{
+    product: Product;
+    variant: Variant;
+    scannedBarcode: string;
+  } | null>(null);
 
   // Poll for M-Pesa transaction status
   useEffect(() => {
@@ -350,14 +361,44 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
 
   const handleBarcodeScan = (barcode: string) => {
     const cleanBar = barcode.trim();
-    const product = products.find(p => p.variants.some(v => v.sku === cleanBar));
+    if (!cleanBar) return;
+
+    playScanBeep();
+
+    const normalize = (s: string) => (s || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    const searchKey = normalize(cleanBar);
+
+    // Search local inventory products for matching variant SKU/barcode or product ID/barcode
+    const product = products.find(p => 
+      p.variants.some(v => {
+        const skuKey = normalize(v.sku);
+        const barKey = normalize((v as any).barcode);
+        return (skuKey && skuKey === searchKey) || (barKey && barKey === searchKey);
+      }) || 
+      (p.id && normalize(p.id) === searchKey) || 
+      ((p as any).barcode && normalize((p as any).barcode) === searchKey)
+    );
+
     if (product) {
-      const variant = product.variants.find(v => v.sku === cleanBar);
+      const variant = product.variants.find(v => {
+        const skuKey = normalize(v.sku);
+        const barKey = normalize((v as any).barcode);
+        return (skuKey && skuKey === searchKey) || (barKey && barKey === searchKey);
+      }) || product.variants[0];
+
       if (variant) {
         addToCart(product, variant);
         setSearchTerm('');
-        setSuccess(`Added to cart: ${product.name}`);
-        setTimeout(() => setSuccess(null), 2000);
+
+        // Pop up complete details modal for the scanned product
+        setScannedProductDetail({
+          product,
+          variant,
+          scannedBarcode: cleanBar
+        });
+
+        setSuccess(`Barcode Matched: ${product.name}`);
+        setTimeout(() => setSuccess(null), 2500);
       }
     } else {
       setScannedLookupInfo(null);
@@ -367,16 +408,16 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
         .then((info) => {
           if (info.found) {
             setScannedLookupInfo(info);
-            setSuccess(`Product found on barcode-list.com: "${info.name}"`);
+            setSuccess(`Online Product Catalog Match: "${info.name}"`);
             setTimeout(() => setSuccess(null), 4000);
           } else {
-            setError(`No product found for barcode: ${cleanBar}`);
-            setTimeout(() => setError(null), 3000);
+            setError(`No product found in inventory for barcode: ${cleanBar}`);
+            setTimeout(() => setError(null), 3500);
           }
         })
         .catch(() => {
           setError(`No product found for barcode: ${cleanBar}`);
-          setTimeout(() => setError(null), 3000);
+          setTimeout(() => setError(null), 3500);
         })
         .finally(() => {
           setIsPosLookupLoading(false);
@@ -1855,6 +1896,212 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
                   className="px-6 py-3 bg-[#5d44ff] text-white rounded-xl text-xs font-black uppercase tracking-wider"
                 >
                   Close Peripherals Panel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Scanned Barcode Product Detail Popup / Modal */}
+        {scannedProductDetail && (
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-card w-full max-w-2xl rounded-[32px] p-6 shadow-2xl border border-indigo-500/30 relative overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between pb-4 border-b border-border">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center shrink-0">
+                    <Barcode className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Scanned Product Details</span>
+                      <span className="px-2.5 py-0.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] font-black rounded-full uppercase">
+                        Active in POS
+                      </span>
+                    </div>
+                    <h2 className="text-xl font-black text-ink">{scannedProductDetail.product.name}</h2>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setScannedProductDetail(null)}
+                  className="w-9 h-9 bg-bg hover:bg-muted text-muted hover:text-ink rounded-xl flex items-center justify-center transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="overflow-y-auto py-4 space-y-4 pr-1">
+                {/* Product Card Header */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-bg rounded-2xl border border-border">
+                  <div className="sm:col-span-1 flex items-center justify-center bg-card rounded-xl border border-border p-2 overflow-hidden h-32 relative">
+                    <SafeImage
+                      src={scannedProductDetail.product.imageUrl}
+                      alt={scannedProductDetail.product.name}
+                      className="max-h-full max-w-full object-contain rounded-lg"
+                      fallback={
+                        <div className="flex flex-col items-center justify-center text-muted">
+                          <Package className="w-10 h-10 opacity-30 mb-1" />
+                          <span className="text-[10px] font-bold uppercase">{scannedProductDetail.product.category}</span>
+                        </div>
+                      }
+                    />
+                  </div>
+                  <div className="sm:col-span-2 space-y-2 flex flex-col justify-center">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2.5 py-1 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 font-mono text-xs font-bold rounded-lg border border-indigo-500/20 flex items-center gap-1">
+                        <Tag className="w-3 h-3" />
+                        SKU/Barcode: {scannedProductDetail.variant.sku || scannedProductDetail.scannedBarcode}
+                      </span>
+                      <span className="px-2.5 py-1 bg-bg border border-border text-muted font-bold text-xs rounded-lg uppercase">
+                        {scannedProductDetail.product.category}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <span className="text-[10px] font-bold text-muted uppercase block">Selling Price</span>
+                        <span className="text-lg font-black text-indigo-600 dark:text-indigo-400">
+                          {formatCurrency(scannedProductDetail.variant.price || scannedProductDetail.product.sellingPrice || scannedProductDetail.product.basePrice)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-muted uppercase block">Available Stock</span>
+                        <span className={`text-sm font-black ${
+                          scannedProductDetail.variant.stock <= 0 ? 'text-rose-500' :
+                          scannedProductDetail.variant.stock <= (scannedProductDetail.product.lowStockThreshold || 5) ? 'text-amber-500' : 'text-emerald-500'
+                        }`}>
+                          {scannedProductDetail.variant.stock} units
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Variant & Financial Indicators */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-3 bg-card border border-border rounded-xl">
+                    <span className="text-[10px] font-bold text-muted uppercase block">Size / Option</span>
+                    <span className="text-xs font-bold text-ink">{scannedProductDetail.variant.size || 'Standard'}</span>
+                  </div>
+                  <div className="p-3 bg-card border border-border rounded-xl">
+                    <span className="text-[10px] font-bold text-muted uppercase block">Color / Type</span>
+                    <span className="text-xs font-bold text-ink">{scannedProductDetail.variant.color || 'Default'}</span>
+                  </div>
+                  <div className="p-3 bg-card border border-border rounded-xl">
+                    <span className="text-[10px] font-bold text-muted uppercase block">Buying Cost</span>
+                    <span className="text-xs font-bold text-ink">
+                      {formatCurrency(scannedProductDetail.product.buyingPrice || 0)}
+                    </span>
+                  </div>
+                  <div className="p-3 bg-card border border-border rounded-xl">
+                    <span className="text-[10px] font-bold text-muted uppercase block">Est. Profit Margin</span>
+                    <span className="text-xs font-bold text-emerald-600">
+                      +{(((scannedProductDetail.variant.price || scannedProductDetail.product.sellingPrice || 0) - (scannedProductDetail.product.buyingPrice || 0)) / (scannedProductDetail.product.buyingPrice || 1) * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* Detailed Specifications & Batch Info */}
+                <div className="p-4 bg-card border border-border rounded-2xl space-y-2">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-muted flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 text-indigo-500" />
+                    Product Specifications & Meta Info
+                  </h4>
+                  <p className="text-xs text-ink leading-relaxed">
+                    {scannedProductDetail.product.description || 'No additional text description entered.'}
+                  </p>
+                  
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-xs">
+                    {scannedProductDetail.product.batchNumber && (
+                      <div className="p-2 bg-bg rounded-lg border border-border">
+                        <span className="text-[9px] font-bold text-muted uppercase block">Batch Number</span>
+                        <span className="font-mono font-bold text-ink">{scannedProductDetail.product.batchNumber}</span>
+                      </div>
+                    )}
+                    {scannedProductDetail.product.expiryDate && (
+                      <div className="p-2 bg-bg rounded-lg border border-border">
+                        <span className="text-[9px] font-bold text-muted uppercase block">Expiry Date</span>
+                        <span className="font-bold text-amber-600">{scannedProductDetail.product.expiryDate}</span>
+                      </div>
+                    )}
+                    {scannedProductDetail.product.partNumber && (
+                      <div className="p-2 bg-bg rounded-lg border border-border">
+                        <span className="text-[9px] font-bold text-muted uppercase block">Part Number</span>
+                        <span className="font-mono font-bold text-ink">{scannedProductDetail.product.partNumber}</span>
+                      </div>
+                    )}
+                    {scannedProductDetail.product.modelCompatibility && (
+                      <div className="p-2 bg-bg rounded-lg border border-border">
+                        <span className="text-[9px] font-bold text-muted uppercase block">Model Compatibility</span>
+                        <span className="font-bold text-ink">{scannedProductDetail.product.modelCompatibility}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Active Sales Cart Control Bar */}
+                {(() => {
+                  const cartItem = cart.find(item => item.productId === scannedProductDetail.product.id && item.variantId === scannedProductDetail.variant.id);
+                  const cartIndex = cart.findIndex(item => item.productId === scannedProductDetail.product.id && item.variantId === scannedProductDetail.variant.id);
+                  const qtyInCart = cartItem ? cartItem.quantity : 0;
+                  const itemUnitPrice = scannedProductDetail.variant.price || scannedProductDetail.product.sellingPrice || scannedProductDetail.product.basePrice;
+
+                  return (
+                    <div className="p-4 bg-indigo-50/50 dark:bg-indigo-950/30 border-2 border-indigo-500/20 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
+                      <div>
+                        <span className="text-xs font-bold text-ink block">Active Sales Cart</span>
+                        <span className="text-xs text-muted">
+                          {qtyInCart > 0 ? `${qtyInCart} unit(s) in current cart (${formatCurrency(itemUnitPrice * qtyInCart)})` : 'Item not added to cart'}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        {cartIndex >= 0 && (
+                          <button
+                            onClick={() => updateQuantity(cartIndex, -1)}
+                            className="w-10 h-10 bg-card border border-border hover:bg-muted text-ink font-bold rounded-xl flex items-center justify-center transition-all"
+                          >
+                            <Minus className="w-4 h-4" />
+                          </button>
+                        )}
+                        <span className="px-4 py-2 bg-card border border-border rounded-xl font-mono text-base font-black text-indigo-600 dark:text-indigo-400">
+                          {qtyInCart}
+                        </span>
+                        <button
+                          onClick={() => addToCart(scannedProductDetail.product, scannedProductDetail.variant)}
+                          className="w-10 h-10 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl flex items-center justify-center transition-all shadow-md shadow-indigo-500/20"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="pt-4 border-t border-border flex flex-wrap gap-3">
+                <button
+                  onClick={() => {
+                    addToCart(scannedProductDetail.product, scannedProductDetail.variant);
+                  }}
+                  className="flex-1 px-5 py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white font-extrabold rounded-2xl shadow-lg shadow-indigo-500/25 hover:from-indigo-700 hover:to-indigo-800 transition-all flex items-center justify-center gap-2 text-xs uppercase tracking-wider"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add Another (+1)</span>
+                </button>
+
+                <button
+                  onClick={() => setScannedProductDetail(null)}
+                  className="px-6 py-3 bg-bg hover:bg-muted text-ink font-bold rounded-2xl border border-border transition-all text-xs uppercase tracking-wider"
+                >
+                  Close Details
                 </button>
               </div>
             </motion.div>
