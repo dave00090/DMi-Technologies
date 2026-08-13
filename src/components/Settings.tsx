@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { localAuth } from '../services/localAuth';
+import { getApiBaseUrl, setApiBaseUrl, DEFAULT_PRODUCTION_BACKEND_URL } from '../services/apiConfig';
 import { UserProfile, ThemeConfig, BusinessProfile, BusinessType } from '../types';
 import { 
   Palette, 
@@ -682,7 +683,8 @@ export const Settings: React.FC<SettingsProps> = ({ user, businessId, shopId, on
                         consumerSecret: config.consumerSecret,
                         environment: config.environment || 'sandbox'
                       });
-                      const response = await fetch(`/api/mpesa/test?${params}`);
+                      const baseUrl = getApiBaseUrl();
+                      const response = await fetch(`${baseUrl}/api/mpesa/test?${params}`);
                       const responseText = await response.text();
                       
                       if (!response.ok) {

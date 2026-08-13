@@ -7,6 +7,7 @@ import { syncService } from '../services/syncService';
 import { dmiDataEngine } from '../services/dmiDataEngine';
 import { SafeImage } from './SafeImage';
 import { masterService, supabase } from '../services/masterService';
+import { getApiBaseUrl } from '../services/apiConfig';
 
 import { SYSTEM_LOGO_URL } from '../constants';
 
@@ -123,7 +124,8 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
     try {
       // 1. Submit STK Push Request
       setVerifyingStatus(`Sending M-Pesa STK Push PIN prompt to ${cleanPhone}...`);
-      const stkResponse = await fetch('/api/mpesa/stkpush', {
+      const baseUrl = getApiBaseUrl();
+      const stkResponse = await fetch(`${baseUrl}/api/mpesa/stkpush`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -208,7 +210,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated,
       const pollInterval = setInterval(async () => {
         if (isCompleted) return;
         try {
-          const statusRes = await fetch(`/api/mpesa/status/${checkoutId}`);
+          const statusRes = await fetch(`${baseUrl}/api/mpesa/status/${checkoutId}`);
           if (statusRes.ok) {
             const txStatus = await statusRes.json();
             if (txStatus.status === 'SUCCESS') {

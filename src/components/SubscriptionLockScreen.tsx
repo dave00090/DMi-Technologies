@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ShieldAlert, CreditCard, RefreshCw, Smartphone, CheckCircle, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../services/masterService';
+import { getApiBaseUrl } from '../services/apiConfig';
 
 interface SubscriptionLockScreenProps {
   licenseKey: string;
@@ -54,7 +55,8 @@ export const SubscriptionLockScreen: React.FC<SubscriptionLockScreenProps> = ({ 
       setVerifyingStatus(`Sending M-Pesa STK PIN request for KES ${selectedPlanPrice.toLocaleString()} to ${cleanPhone}...`);
 
       // 2. Call STK endpoint
-      const stkResponse = await fetch('/api/mpesa/stkpush', {
+      const baseUrl = getApiBaseUrl();
+      const stkResponse = await fetch(`${baseUrl}/api/mpesa/stkpush`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -117,7 +119,7 @@ export const SubscriptionLockScreen: React.FC<SubscriptionLockScreenProps> = ({ 
       const pollInterval = setInterval(async () => {
         if (isSettled) return;
         try {
-          const statusRes = await fetch(`/api/mpesa/status/${checkoutId}`);
+          const statusRes = await fetch(`${baseUrl}/api/mpesa/status/${checkoutId}`);
           if (statusRes.ok) {
             const txStatus = await statusRes.json();
             if (txStatus.status === 'SUCCESS') {

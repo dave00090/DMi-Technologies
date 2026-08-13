@@ -4,6 +4,8 @@
  * Returns complete product details: name, brand, category, description, image, and suggested pricing.
  */
 
+import { getApiBaseUrl } from './apiConfig';
+
 export interface BarcodeProductInfo {
   found: boolean;
   barcode: string;
@@ -26,7 +28,8 @@ export const lookupBarcodeDetails = async (barcode: string): Promise<BarcodeProd
 
   // 1. Try internal backend route first (/api/barcode/lookup)
   try {
-    const res = await fetch(`/api/barcode/lookup?barcode=${encodeURIComponent(cleanBarcode)}`);
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/api/barcode/lookup?barcode=${encodeURIComponent(cleanBarcode)}`);
     if (res.ok) {
       const data: BarcodeProductInfo = await res.json();
       if (data && data.found) {

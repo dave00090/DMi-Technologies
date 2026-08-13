@@ -43,6 +43,7 @@ import { Receipt } from './Receipt';
 import { motion, AnimatePresence } from 'motion/react';
 import { BarcodeScanner } from './BarcodeScanner';
 import { useHardwareScanner } from '../hooks/useHardwareScanner';
+import { getApiBaseUrl } from '../services/apiConfig';
 import { PaymentMethod } from '../types';
 import { lookupBarcodeDetails, BarcodeProductInfo } from '../services/barcodeLookup';
 import { playScanBeep } from '../lib/barcodeUtils';
@@ -118,7 +119,7 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
     if (checkoutRequestId && mpesaStatus === 'WAITING') {
       const checkStatus = async () => {
         try {
-          const apiHost = window.location.origin;
+          const apiHost = getApiBaseUrl();
           const response = await fetch(`${apiHost}/api/mpesa/status/${checkoutRequestId}`);
           if (!response.ok) return; // Silent fail for polling errors to avoid UI noise
           const data = await response.json();
@@ -166,8 +167,8 @@ export const POS: React.FC<POSProps> = ({ user, businessId, shopId }) => {
     const timeoutId = setTimeout(() => controller.abort(), 35000); // 35s timeout
 
     try {
-      // Ensure we are calling the API on the same host
-      const apiHost = window.location.origin;
+      // Route STK push request to deployed backend or local origin
+      const apiHost = getApiBaseUrl();
       const response = await fetch(`${apiHost}/api/mpesa/stkpush`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

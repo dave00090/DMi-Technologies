@@ -18,6 +18,7 @@ import {
   GuestRequest
 } from '../types';
 import { get as idbGet, set as idbSet, del as idbDel, keys as idbKeys, createStore } from 'idb-keyval';
+import { getApiBaseUrl } from './apiConfig';
 
 // Create a custom store with a fresh name to avoid "object store not found" errors from previous versions
 const customStore = createStore('dmi-pos-v3', 'keyval');
@@ -1046,7 +1047,8 @@ export const localDb = {
   // Guest Requests & Feedback (Airbnbs / Apartments / Hotels)
   getGuestRequests: async (businessId: string, shopId: string): Promise<GuestRequest[]> => {
     try {
-      const res = await fetch(`/api/guest-requests?businessId=${encodeURIComponent(businessId)}&shopId=${encodeURIComponent(shopId)}&t=${Date.now()}`);
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/guest-requests?businessId=${encodeURIComponent(businessId)}&shopId=${encodeURIComponent(shopId)}&t=${Date.now()}`);
       if (res.ok) {
         const serverData = await res.json();
         // Fallback sync cache
@@ -1071,7 +1073,8 @@ export const localDb = {
     
     // Attempt live dispatch to Express
     try {
-      const res = await fetch('/api/guest-requests', {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/guest-requests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newRequest)
@@ -1101,7 +1104,8 @@ export const localDb = {
       : { id, status, lastUpdated, synced: false };
 
     try {
-      const res = await fetch(`/api/guest-requests/${encodeURIComponent(id)}/status`, {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/guest-requests/${encodeURIComponent(id)}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, lastUpdated })
@@ -1122,7 +1126,8 @@ export const localDb = {
 
   deleteGuestRequest: async (id: string): Promise<void> => {
     try {
-      const res = await fetch(`/api/guest-requests/${encodeURIComponent(id)}`, {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/guest-requests/${encodeURIComponent(id)}`, {
         method: 'DELETE'
       });
       if (res.ok) {
