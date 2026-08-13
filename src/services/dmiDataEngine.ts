@@ -1,6 +1,154 @@
 import { localDb } from './localDb';
 import { syncService } from './syncService';
 
+/**
+ * Automatically creates a "DMi Backup" folder on the user's Desktop
+ * and writes system data into it.
+ * Works seamlessly in:
+ * 1. Tauri compiled app (using Tauri path & fs APIs)
+ * 2. Electron compiled app (using Node fs & path APIs)
+ * 3. Standard browser fallback (via auto-download trigger & IndexedDB vault caching)
+ */
+export async function writeToDesktopBackupFolder(
+  filename: string,
+  jsonContent: string
+): Promise<{ success: boolean; filePath?: string; method: string }> {
+  // 1. TAURI DESKTOP ENVIRONMENT
+  try {
+    const tauri = typeof window !== 'undefined' ? (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__ : null;
+
+    if (tauri && (tauri.path || tauri.fs)) {
+      const pathApi = tauri.path;
+      const fsApi = tauri.fs;
+
+      if (pathApi && fsApi) {
+        const desktopDirFn = pathApi.desktopDir;
+        const joinFn = pathApi.join;
+
+        let desktopPath = '';
+        if (typeof desktopDirFn === 'function') {
+          desktopPath = await desktopDirFn();
+        }
+
+        if (desktopPath && typeof joinFn === 'function') {
+          const backupFolder = await joinFn(desktopPath, 'DMi Backup');
+          const targetFilePath = await joinFn(backupFolder, filename);
+
+          // Ensure "DMi Backup" directory exists on Desktop
+          const createDirFn = fsApi.createDir || fsApi.mkdir;
+          if (typeof createDirFn === 'function') {
+            try {
+              const baseDir = fsApi.BaseDirectory?.Desktop;
+              await createDirFn(
+                'DMi Backup',
+                baseDir ? { dir: baseDir, recursive: true } : { recursive: true }
+              );
+            } catch (errDir) {
+              // Folder already exists
+            }
+          }
+
+          // Write backup file directly into Desktop/DMi Backup/<filename>
+          const writeFn = fsApi.writeTextFile || fsApi.writeFile;
+          if (typeof writeFn === 'function') {
+            const baseDir = fsApi.BaseDirectory?.Desktop;
+            try {
+              await writeFn(
+                targetFilePath,
+                jsonContent,
+                baseDir ? { dir: baseDir } : undefined
+              );
+            } catch (writeErr) {
+              await writeFn(targetFilePath, jsonContent);
+            }
+
+            console.log(`[TAURI DESKTOP ENGINE] Successfully saved 24h backup to Desktop folder: ${targetFilePath}`);
+            return { success: true, filePath: targetFilePath, method: 'TAURI_DESKTOP_FS' };
+          }
+        }
+      }
+    }
+
+    // Dynamic import fallback for Tauri bundled modules with @vite-ignore
+    const tauriPathMod = '@tauri-apps/api/path';
+    const tauriFsMod = '@tauri-apps/api/fs';
+    const pathApi: any = await import(/* @vite-ignore */ tauriPathMod).catch(() => null);
+    const fsApi: any = await import(/* @vite-ignore */ tauriFsMod).catch(() => null);
+
+    if (pathApi && fsApi) {
+      const desktopDirFn = pathApi.desktopDir;
+      const joinFn = pathApi.join;
+
+      if (typeof desktopDirFn === 'function') {
+        const desktopPath = await desktopDirFn();
+        if (desktopPath && typeof joinFn === 'function') {
+          const backupFolder = await joinFn(desktopPath, 'DMi Backup');
+          const targetFilePath = await joinFn(backupFolder, filename);
+
+          const createDirFn = fsApi.createDir || fsApi.mkdir;
+          if (typeof createDirFn === 'function') {
+            try {
+              await createDirFn('DMi Backup', { dir: fsApi.BaseDirectory?.Desktop, recursive: true });
+            } catch (errDir) {}
+          }
+
+          const writeFn = fsApi.writeTextFile || fsApi.writeFile;
+          if (typeof writeFn === 'function') {
+            await writeFn(targetFilePath, jsonContent);
+            console.log(`[TAURI DESKTOP ENGINE] Saved 24h backup via imported Tauri module: ${targetFilePath}`);
+            return { success: true, filePath: targetFilePath, method: 'TAURI_DESKTOP_FS' };
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[TAURI DESKTOP ENGINE] Not in Tauri container or permission check:', err);
+  }
+
+  // 2. ELECTRON DESKTOP ENVIRONMENT
+  try {
+    if (typeof window !== 'undefined' && (window as any).require) {
+      const fs = (window as any).require('fs');
+      const path = (window as any).require('path');
+      const os = (window as any).require('os');
+
+      if (fs && path && os) {
+        const desktopPath = path.join(os.homedir(), 'Desktop');
+        const backupFolder = path.join(desktopPath, 'DMi Backup');
+
+        if (!fs.existsSync(backupFolder)) {
+          fs.mkdirSync(backupFolder, { recursive: true });
+        }
+
+        const fullPath = path.join(backupFolder, filename);
+        fs.writeFileSync(fullPath, jsonContent, 'utf-8');
+
+        console.log(`[ELECTRON DESKTOP ENGINE] Successfully saved 24h backup to Desktop folder: ${fullPath}`);
+        return { success: true, filePath: fullPath, method: 'ELECTRON_DESKTOP_FS' };
+      }
+    }
+  } catch (err) {
+    console.warn('[ELECTRON DESKTOP ENGINE] Not in Electron node environment:', err);
+  }
+
+  // 3. STANDARD BROWSER FALLBACK (Auto-download link trigger)
+  try {
+    const blob = new Blob([jsonContent], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    return { success: true, filePath: filename, method: 'BROWSER_DOWNLOAD_FALLBACK' };
+  } catch (e: any) {
+    return { success: false, method: 'FAILED' };
+  }
+}
+
 export interface DmiDataBundle {
   systemName: string;
   version: string;
@@ -118,16 +266,8 @@ export const dmiDataEngine = {
         bundleContent: jsonString
       }]);
 
-      // 2. Trigger auto-download/file export targeting "DMi Backup" directory
-      const blob = new Blob([jsonString], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      // 2. Automatically save directly to "Desktop / DMi Backup" folder (Tauri / Electron) or trigger browser auto-download
+      const writeResult = await writeToDesktopBackupFolder(filename, jsonString);
 
       // 3. Update backup logs & last backup timestamp
       localStorage.setItem('dmi_pos_last_auto_backup_time', now.toISOString());

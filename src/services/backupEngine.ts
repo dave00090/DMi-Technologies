@@ -1,4 +1,5 @@
 import { localDb } from './localDb';
+import { writeToDesktopBackupFolder } from './dmiDataEngine';
 
 export interface BackupRecord {
   id: string;
@@ -98,17 +99,8 @@ export const backupEngine = {
       
       const filename = `DMi_POS_Backup_${formattedDate}.json`;
       const jsonString = JSON.stringify(payload, null, 2);
-      const blob = new Blob([jsonString], { type: 'application/json' });
-      
-      // We can trigger an actual browser file download link
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      // Automatically save directly to "Desktop / DMi Backup" folder in Tauri / Electron or fallback to browser download
+      await writeToDesktopBackupFolder(filename, jsonString);
 
       // Add to backups log
       const currentList = backupEngine.getBackups();
