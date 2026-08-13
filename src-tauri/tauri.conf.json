@@ -1,68 +1,41 @@
 {
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "DMi Technologies POS",
+  "version": "3.5.0",
+  "identifier": "com.dmitechnologies.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
-    "devPath": "http://localhost:3000",
-    "distDir": "../dist"
+    "devUrl": "http://localhost:3000",
+    "frontendDist": "../dist"
   },
-  "package": {
-    "productName": "DMi Technologies POS",
-    "version": "3.5.0"
-  },
-  "tauri": {
-    "allowlist": {
-      "all": false,
-      "path": {
-        "all": true
-      },
-      "fs": {
-        "all": true,
-        "readFile": true,
-        "writeFile": true,
-        "readDir": true,
-        "copyFile": true,
-        "createDir": true,
-        "removeDir": true,
-        "removeFile": true,
-        "scope": ["$DESKTOP", "$DESKTOP/*", "$DESKTOP/DMi Backup/*"]
-      },
-      "dialog": {
-        "all": true,
-        "open": true,
-        "save": true
-      },
-      "shell": {
-        "all": true,
-        "open": true
-      }
-    },
-    "bundle": {
-      "active": true,
-      "category": "Business",
-      "copyright": "DMi Technologies",
-      "icon": [
-        "icons/32x32.png",
-        "icons/128x128.png",
-        "icons/128x128@2x.png",
-        "icons/icon.icns",
-        "icons/icon.ico"
-      ],
-      "identifier": "com.dmitechnologies.app",
-      "longDescription": "DMi Point of Sale System with Automatic Desktop 24-Hour Backup",
-      "shortDescription": "DMi POS Desktop",
-      "targets": "all"
-    },
-    "security": {
-      "csp": null
-    },
+  "app": {
     "windows": [
       {
-        "fullscreen": false,
+        "title": "DMi Technologies POS",
+        "width": 1200,
         "height": 800,
         "resizable": true,
-        "title": "DMi Technologies POS",
-        "width": 1200
+        "fullscreen": false
       }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Business",
+    "copyright": "DMi Technologies",
+    "longDescription": "DMi Point of Sale System with Automatic Desktop 24-Hour Backup",
+    "shortDescription": "DMi POS Desktop",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
     ]
   }
 }
