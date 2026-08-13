@@ -1021,6 +1021,10 @@ export const localDb = {
     console.log('Storage maintenance complete.');
   },
 
+  getIdbKeys: async (): Promise<IDBValidKey[]> => {
+    return await idbKeys(customStore);
+  },
+
   // Image Helper
   getImage: async (url: string): Promise<string> => {
     if (url.startsWith('idb://')) {

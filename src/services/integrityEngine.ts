@@ -123,7 +123,7 @@ export const integrityEngine = {
     let idbImageKeys: string[] = [];
     let totalCustomStoreKeys = 0;
     try {
-      const allKeys = await keys();
+      const allKeys = await localDb.getIdbKeys();
       totalCustomStoreKeys = allKeys.length;
       idbImageKeys = allKeys.filter((k: any) => typeof k === 'string' && k.startsWith('img_')) as string[];
     } catch (e) {
@@ -142,7 +142,11 @@ export const integrityEngine = {
     for (const p of products) {
       if (p.imageUrl && p.imageUrl.startsWith('idb://')) {
         const cleanKey = p.imageUrl.replace('idb://', '');
-        if (!idbKeySet.has(cleanKey)) {
+        // First check key set, then fallback to direct getImage check
+        const hasKeyInStore = idbKeySet.has(cleanKey);
+        const actualImageData = !hasKeyInStore ? await localDb.getImage(p.imageUrl) : true;
+        
+        if (!hasKeyInStore && !actualImageData) {
           brokenImageLinks++;
           issues.push({
             id: `prod-img-${p.id}`,
@@ -190,7 +194,7 @@ export const integrityEngine = {
 
     let idbImageKeys: string[] = [];
     try {
-      const allKeys = await keys();
+      const allKeys = await localDb.getIdbKeys();
       idbImageKeys = allKeys.filter((k: any) => typeof k === 'string' && k.startsWith('img_')) as string[];
     } catch (e) {
       console.warn('Could not read IndexedDB keys during image repair:', e);
@@ -202,10 +206,15 @@ export const integrityEngine = {
     for (const p of products) {
       if (p.imageUrl && p.imageUrl.startsWith('idb://')) {
         const cleanKey = p.imageUrl.replace('idb://', '');
+        // Verify key in store first
         if (!idbKeySet.has(cleanKey)) {
-          // Remove broken image pointer so product uses default placeholder cleanly
-          await localDb.updateProduct(p.id, { imageUrl: '' });
-          repairedCount++;
+          // Double-check by attempting to fetch the binary/base64 data directly
+          const actualImg = await localDb.getImage(p.imageUrl);
+          if (!actualImg) {
+            // Remove truly broken image pointer so product uses default placeholder cleanly
+            await localDb.updateProduct(p.id, { imageUrl: '' });
+            repairedCount++;
+          }
         }
       }
     }
